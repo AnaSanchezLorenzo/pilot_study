@@ -15,8 +15,9 @@ knitr::opts_knit$set(root.dir = './')
 
 # Data description
 
-\- Here describe what your data is, important experimental info,.... People
-should understand the most important info before running the code.
+\- Here describe what your data is, important experimental info,.... People should understand the most important info before running the code.
+
+-   THIS IS A TEST FOR PUSHING AND PULLING NEW CHANGES IN GITHUB :) Ana
 
 ## loading packages
 
@@ -58,11 +59,9 @@ library(MetaboAnnotation) # Functionality for metabolite annotation.
 
 -   As I am going to use my own data I will use the normal way to import files
 
--   DATA HAS TO BE LCMS1 \<- (there is already another function called data and
-    this name cannot be used anymore).
+-   DATA HAS TO BE LCMS1 \<- (there is already another function called data and this name cannot be used anymore).
 
--   NOTE: What metadata whould include? mzml file name, injection_index,
-    phenotype, sample_name(i.e.C02M), age
+-   NOTE: What metadata whould include? mzml file name, injection_index, phenotype, sample_name(i.e.C02M), age
 
 ```{r import, message=FALSE, warning=FALSE}
 # Data import
@@ -95,20 +94,16 @@ if (.Platform$OS.type == "unix") {
 lcms1
 ```
 
-Below we provide a brief overview of the data structure and content. The
-`sampleData()` function extracts sample information from the object.
+Below we provide a brief overview of the data structure and content. The `sampleData()` function extracts sample information from the object.
 
 ```{r phenodata}
 #| tbl-cap: "Table 1. Samples from the data set."
 sampleData(lcms1) |> kable()
 ```
 
-There are `r length(sampleData(lcms1))` samples in this data set. We only use
-QCs here, this will allows to get an idea of the parameters needed for the
-overall analysis without wasting too much time duirng computation.
+There are `r length(sampleData(lcms1))` samples in this data set. We only use QCs here, this will allows to get an idea of the parameters needed for the overall analysis without wasting too much time duirng computation.
 
-We will define colors for each of the sample groups based on their sample group
-using the *RColorBrewer* package:
+We will define colors for each of the sample groups based on their sample group using the *RColorBrewer* package:
 
 ```{r define-colors, include=FALSE}
 #' Define colors for the different QCs 
@@ -118,18 +113,14 @@ names(col_phenotype) <- sampleData(lcms1)$sample_name
 col_sample <- col_phenotype[sampleData(lcms1)$sample_name]
 ```
 
-The MS data of this experiment is stored as a *`Spectra` object* (from the
-`r Biocpkg("Spectra")` Bioconductor package) within the `MsExperiment` object
-and can be accessed using `spectra()` function. Each element in this object is
-a spectrum
+The MS data of this experiment is stored as a *`Spectra` object* (from the `r Biocpkg("Spectra")` Bioconductor package) within the `MsExperiment` object and can be accessed using `spectra()` function. Each element in this object is a spectrum
 
 ```{r}
 #' Access Spectra Object
 spectra(lcms1)
 ```
 
-We can also summarize the number of spectra and their respective MS level. We
-only have MS1 here.
+We can also summarize the number of spectra and their respective MS level. We only have MS1 here.
 
 ```{r}
 #' Count the number of spectra with a specific MS level per file.
@@ -140,11 +131,9 @@ spectra(lcms1) |>
     do.call(what = cbind)
 ```
 
-The present data set thus contains only MS1 data, which is ideal for
-quantification of the signal.
+The present data set thus contains only MS1 data, which is ideal for quantification of the signal.
 
-As another example, we below determine the retention time range for the entire
-data set.
+As another example, we below determine the retention time range for the entire data set.
 
 ```{r}
 #' Retention time range for entire dataset
@@ -155,30 +144,15 @@ spectra(lcms1) |>
 
 # Data visualization and general quality assessment
 
-Effective visualization is paramount for inspecting and assessing the quality
-of MS data. For a general overview of our LC-MS data, we can:
+Effective visualization is paramount for inspecting and assessing the quality of MS data. For a general overview of our LC-MS data, we can:
 
--   Combine all mass peaks from all (MS1) spectra of a sample into a single
-    spectrum in which each mass peak then represents the maximum signal of all
-    mass peaks with a similar *m/z*. This spectrum might then be called Base
-    Peak Spectrum (BPS), providing information on the most abundant ions of a
-    sample.
--   Aggregate mass peak intensities for each spectrum, resulting in the Base
-    Peak Chromatogram (BPC). The BPC shows the highest measured intensity for
-    each distinct retention time (hence spectrum) and is thus orthogonal to the
-    BPS.
--   Sum the mass peak intensities for each spectrum to create a Total Ion
-    Chromatogram (TIC).
--   Compare the BPS of all samples in an experiment to evaluate similarity of
-    their ion content.
--   Compare the BPC of all samples in an experiment to identify samples with
-    similar or dissimilar chromatographic signal.
+-   Combine all mass peaks from all (MS1) spectra of a sample into a single spectrum in which each mass peak then represents the maximum signal of all mass peaks with a similar *m/z*. This spectrum might then be called Base Peak Spectrum (BPS), providing information on the most abundant ions of a sample.
+-   Aggregate mass peak intensities for each spectrum, resulting in the Base Peak Chromatogram (BPC). The BPC shows the highest measured intensity for each distinct retention time (hence spectrum) and is thus orthogonal to the BPS.
+-   Sum the mass peak intensities for each spectrum to create a Total Ion Chromatogram (TIC).
+-   Compare the BPS of all samples in an experiment to evaluate similarity of their ion content.
+-   Compare the BPC of all samples in an experiment to identify samples with similar or dissimilar chromatographic signal.
 
-In addition to such general data evaluation and visualization, it is also
-crucial to investigate specific signal of e.g. internal standards or
-compounds/ions known to be present in the samples. By providing a reliable
-reference, internal standards help achieve consistent and accurate analytical
-results.
+In addition to such general data evaluation and visualization, it is also crucial to investigate specific signal of e.g. internal standards or compounds/ions known to be present in the samples. By providing a reliable reference, internal standards help achieve consistent and accurate analytical results.
 
 ## Spectra Data Visualization: BPS
 
@@ -196,11 +170,7 @@ par(mar = c(2, 1, 1, 1))
 plotSpectra(bps, main= "")
 ```
 
-Next to the visual inspection above, we can also calculate and express the
-similarity between the BPS with a heatmap. Below we use the `compareSpectra()`
-function to calculate pairwise similarities between all BPS and use then the
-`pheatmap()` function from the *pheatmap* package to cluster and visualize this
-result.
+Next to the visual inspection above, we can also calculate and express the similarity between the BPS with a heatmap. Below we use the `compareSpectra()` function to calculate pairwise similarities between all BPS and use then the `pheatmap()` function from the *pheatmap* package to cluster and visualize this result.
 
 ```{r compare-spectra}
 #| fig-cap: "Figure 2. Heatmap of MS signals similarities."
@@ -233,9 +203,7 @@ legend("topright", col = col_phenotype,
        bty = "n")
 ```
 
-I don't think we need to filter anything. Tehre seem to be signall all along
-the rt axis. I don't see any big rt shifts anywhere, a little one around 200,
-we will see if that get fixed later.
+I don't think we need to filter anything. Tehre seem to be signall all along the rt axis. I don't see any big rt shifts anywhere, a little one around 200, we will see if that get fixed later.
 
 There seem to be some variation in intensity however. To be kept in mind.
 
@@ -261,15 +229,11 @@ pheatmap(ticmap, annotation_col = ann,
          annotation_colors = list(sample_name = col_phenotype))
 ```
 
-Bit of grouping of some samples, do you have an idea for the pattern explanation
-?
+Bit of grouping of some samples, do you have an idea for the pattern explanation ?
 
 ### Known compounds
 
-Throughout the entire process, it is crucial to have reference points within
-the dataset, such as well-known ions. Most experiments nowadays include
-internal standards (IS), and it was the case here. We strongly recommend using
-them for visualization throughout the entire analysis.
+Throughout the entire process, it is crucial to have reference points within the dataset, such as well-known ions. Most experiments nowadays include internal standards (IS), and it was the case here. We strongly recommend using them for visualization throughout the entire analysis.
 
 -   Describe your standards quickly
 
@@ -326,9 +290,7 @@ for (i in seq_len(nrow(intern_standard))) {
 
 ## Chromatographic peak detection
 
-The initial preprocessing step involves detecting intensity peaks along the
-retention time axis, the so called *chromatographic peaks*. To achieve this, we
-employ the `findChromPeaks()` function within *xcms*.
+The initial preprocessing step involves detecting intensity peaks along the retention time axis, the so called *chromatographic peaks*. To achieve this, we employ the `findChromPeaks()` function within *xcms*.
 
 ```{r Default-centwave-param-test}
 #' Use default Centwave parameter
@@ -342,8 +304,7 @@ is_test <- findChromPeaks(eics, param = param)
 chromPeaks(is_test) # no peaks are found. therefore need to improve settings
 ```
 
-While *CentWave* is a highly performant algorithm, it requires to be costumized
-to each dataset.
+While *CentWave* is a highly performant algorithm, it requires to be costumized to each dataset.
 
 Below we estimate the ppm
 
@@ -368,13 +329,10 @@ mz_diff <- cst |>
 range(mz_diff * 1e6 / mean(unlist(mz(cst)), na.rm = FALSE), na.rm = FALSE)
 ```
 
-Very small ppm here so I think we could go with 5ppm for the settings of peak
-detection. But I decided to follow the recommendation below for the ppm.
+Very small ppm here so I think we could go with 5ppm for the settings of peak detection. But I decided to follow the recommendation below for the ppm.
 
-NOTE: NPC parameters; ds \<- xcmsSet(method="centWave", noise=600, ppm=25,
-prefilter=c(8, 6000), snthresh = 10,\
-peakwidth=c(1.5,5), mzdiff=0.01, mzCenterFun="wMean", integrate=2, lock=F,
-fitgauss=F, BPPARAM=SnowParam (workers = workers),
+NOTE: NPC parameters; ds \<- xcmsSet(method="centWave", noise=600, ppm=25, prefilter=c(8, 6000), snthresh = 10,\
+peakwidth=c(1.5,5), mzdiff=0.01, mzCenterFun="wMean", integrate=2, lock=F, fitgauss=F, BPPARAM=SnowParam (workers = workers),
 
 ```{r}
 #' Parameters adapted for chromatographic peak detection on EICs.
@@ -389,14 +347,9 @@ nrow(chromPeaks(is_test))
 
 Now we run on the entire dataset.
 
--   We revert the value for parameter `snthresh` to its default, because, as
-    mentioned above, background noise estimation is more reliable when
-    performed on the full data set.
+-   We revert the value for parameter `snthresh` to its default, because, as mentioned above, background noise estimation is more reliable when performed on the full data set.
 
--   Parameter `chunkSize` of `findChromPeaks()` defines the number of data
-    files that are loaded into memory and processed simultaneously. This
-    parameter thus allows to fine-tune the memory demand as well as performance
-    of the chromatographic peak detection step.
+-   Parameter `chunkSize` of `findChromPeaks()` defines the number of data files that are loaded into memory and processed simultaneously. This parameter thus allows to fine-tune the memory demand as well as performance of the chromatographic peak detection step.
 
 ```{r run-find-chrompeak-on-entire-dataset}
 #' Using the same settings, but with default snthresh
@@ -435,18 +388,12 @@ chromPeaks(eics_peakdetect) |> nrow()
 
 We get some splitting, 2 reasons i can think of:
 
--   Some eics show a second little peak, maybe these extra peak come from
-    there.
--   Otherwise it's from split peaks, which often happens when we have noise,
-    which we do have a bit on some IS. let's see if the next step decrease this
-    number.
+-   Some eics show a second little peak, maybe these extra peak come from there.
+-   Otherwise it's from split peaks, which often happens when we have noise, which we do have a bit on some IS. let's see if the next step decrease this number.
 
 ### Refine identified chromatographic peaks
 
-The identification of chromatographic peaks using the *CentWave* algorithm can
-sometimes result in artifacts, such as overlapping or split peaks. To address
-this issue, the `refineChromPeaks()` function is utilized, in conjunction with
-`MergeNeighboringPeaksParam`, which aims at merging such split peaks.
+The identification of chromatographic peaks using the *CentWave* algorithm can sometimes result in artifacts, such as overlapping or split peaks. To address this issue, the `refineChromPeaks()` function is utilized, in conjunction with `MergeNeighboringPeaksParam`, which aims at merging such split peaks.
 
 ```{r test-merging}
 #| fig-cap: "Figure 14. Examples of CentWave peak detection artifacts after merging."
@@ -468,10 +415,7 @@ chromPeakData(lcms1)$merged |>
                       table()
 ```
 
-We check the number of identified chromatographic
-peaks in all samples of a data set can help spotting potentially problematic
-samples. Below we count the number of chromatographic peaks per sample and show
-these numbers in a table.
+We check the number of identified chromatographic peaks in all samples of a data set can help spotting potentially problematic samples. Below we count the number of chromatographic peaks per sample and show these numbers in a table.
 
 ```{r}
 #| tbl-cap: "Table 5. Samples and number of identified chromatographic peaks."
@@ -481,20 +425,17 @@ data.frame(sample_name = sampleData(lcms1)$sample_name,
     kable(format = "pipe")
 ```
 
-Pretty big decrease with injection index... Definitely linked with drop in 
-intensity.
+Pretty big decrease with injection index... Definitely linked with drop in intensity.
 
 ## Retention time alignment
 
-Not running it here, will run it on the overall dataset and base it on QC 
-samples. 
+Not running it here, will run it on the overall dataset and base it on QC samples.
 
 ## Correspondence
 
-When we do correspondence we base it on the different samples group = the 
-sample that we expect have the same number of peaks. 
+When we do correspondence we base it on the different samples group = the sample that we expect have the same number of peaks.
 
-Here we have one group, QCs. 
+Here we have one group, QCs.
 
 ```{r}
 param <- PeakDensityParam(sampleGroups = sampleData(lcms1)$phenotype, bw = 2)
@@ -520,7 +461,6 @@ for (i in seq_len(nrow(intern_standard))) {
 ## results are great !! we get all 10 peaks in each is
 ```
 
-
 ```{r}
 #' Define the settings for the param
 param <- PeakDensityParam(sampleGroups = sampleData(lcms1)$phenotype,
@@ -530,7 +470,6 @@ param <- PeakDensityParam(sampleGroups = sampleData(lcms1)$phenotype,
 #' Apply to whole data
 lcms1 <- groupChromPeaks(lcms1, param = param)
 ```
-
 
 ```{r}
 #' Plot again
@@ -558,8 +497,7 @@ for (i in seq_len(nrow(intern_standard))) {
 }
 ```
 
-Another interesting information to look a the the distribution of these
-features along the retention time axis.
+Another interesting information to look a the the distribution of these features along the retention time axis.
 
 ```{r}
 #| tbl-cap: "Table 5. Distribution of features along the retention time axis."
@@ -573,16 +511,9 @@ table(cuts) |>
     kable(format = "pipe")
 ```
 
-The results from the correspondence analysis are now stored, along with the
-results from the other preprocessing steps, within our `XcmsExperiment` result
-object.
+The results from the correspondence analysis are now stored, along with the results from the other preprocessing steps, within our `XcmsExperiment` result object.
 
-This data frame provides the average *m/z* and retention time (in columns
-`"mzmed"` and `"rtmed"`) that characterize a LC-MS feature. Column, `"peakidx"`
-contains the indices of all chromatographic peaks that were assigned to that
-feature. The actual abundances for these features, which represent also the
-final preprocessing results, can be extracted with the `featureValues()`
-function:
+This data frame provides the average *m/z* and retention time (in columns `"mzmed"` and `"rtmed"`) that characterize a LC-MS feature. Column, `"peakidx"` contains the indices of all chromatographic peaks that were assigned to that feature. The actual abundances for these features, which represent also the final preprocessing results, can be extracted with the `featureValues()` function:
 
 ```{r}
 #' Extract feature abundances
@@ -590,18 +521,13 @@ featureValues(lcms1, method = "sum") |>
     head()
 ```
 
-We can note that some features (e.g. F0002) have missing values in
-some samples. This is expected to a certain degree as not in all samples
-features, respectively their ions, need to be present. We will address this in
-the next section.
+We can note that some features (e.g. F0002) have missing values in some samples. This is expected to a certain degree as not in all samples features, respectively their ions, need to be present. We will address this in the next section.
 
-+ this quick check kinda make sense because we saw that there was less peaks in
-in the later QCs. 
+-   this quick check kinda make sense because we saw that there was less peaks in in the later QCs.
 
 ```{r}
 nrow(featureDefinitions(lcms1))
 ```
-
 
 ## Gap filling
 
@@ -610,8 +536,8 @@ nrow(featureDefinitions(lcms1))
 sum(is.na(featureValues(lcms1))) /
     length(featureValues(lcms1)) * 100
 ```
-That's a nice number. 
 
+That's a nice number.
 
 ```{r}
 #' Fill in the missing values in the whole dataset
@@ -621,7 +547,8 @@ lcms1 <- fillChromPeaks(lcms1, param = ChromPeakAreaParam(), chunkSize = 3)
 sum(is.na(featureValues(lcms1))) /
     length(featureValues(lcms1)) * 100
 ```
- The gap-filling rescue ALL missing values. 
+
+The gap-filling rescue ALL missing values.
 
 ```{r Detected-vs-filled-signal1}
 #' Get only detected signal in QC samples
@@ -649,11 +576,7 @@ grid()
 abline(0, 1)
 ```
 
-The detected (x-axis) and gap-filled (y-axis) values for QC samples are highly
-correlated. Especially for higher abundances, the agreement is very high, while
-for low intensities, as can be expected, differences are higher and trending to
-below the correlation line. Below we, in addition, fit a linear regression line
-to the data and summarize its results
+The detected (x-axis) and gap-filled (y-axis) values for QC samples are highly correlated. Especially for higher abundances, the agreement is very high, while for low intensities, as can be expected, differences are higher and trending to below the correlation line. Below we, in addition, fit a linear regression line to the data and summarize its results
 
 ```{r}
 #' fit a linear regression line to the data
@@ -661,28 +584,22 @@ l <- lm(log2(avg_filled) ~ log2(avg_detect))
 summary(l)
 ```
 
-The linear regression line has a slope of `r round(coef(l)[2], 2)` and an
-intercept of `r round(coef(l)[1], 2)`. This indicates that the filled-in signal
-is on average `r round(coef(l)[2], 2)` times higher than the detected signal.
+The linear regression line has a slope of `r round(coef(l)[2], 2)` and an intercept of `r round(coef(l)[1], 2)`. This indicates that the filled-in signal is on average `r round(coef(l)[2], 2)` times higher than the detected signal.
 
 ## Preprocessing results
 
-The final results of the LC-MS data preprocessing are stored within the
-`XcmsExperiment` object. As well as the exact preprocessing performed and each
-setting used. 
+The final results of the LC-MS data preprocessing are stored within the `XcmsExperiment` object. As well as the exact preprocessing performed and each setting used.
 
 ```{r Process-history}
 #' Check first step of the process history
 processHistory(lcms1)[[1]]
 ```
 
-
 ```{r}
 #' Extract results as a SummarizedExperiment
 res <- quantify(lcms1, method = "sum", filled = FALSE)
 res
 ```
-
 
 ```{r}
 assays(res)$raw_filled <- featureValues(lcms1, method = "sum",
@@ -692,8 +609,6 @@ assays(res)$raw_filled <- featureValues(lcms1, method = "sum",
 assayNames(res)
 ```
 
-
-
 ```{r}
 #' Save the preprocessing results
 #' d <- file.path(tempdir(), "objects/lcms1")
@@ -702,18 +617,6 @@ assayNames(res)
 save(lcms1, file = "preprocessed_lcms1.RData")
 ```
 
-FInal notes: I think it might be worth it to check a bit some of the features that
-got gap-filled. See if they are actual features or noise. 
-Also in your notes you precise that the noise = parameter in the centawave param 
-is usually at 600. If i do that I get 1880 features (so quite less) and 3.5% 
-missing values (instead of 4.00). It's less features but they
-could be higher quality features. It would be good to look what is best. 
-You can extract chromatogram() of the areas of interest and see if they are actual 
-features or not. 
- DO this test on this dataset (QCs) it's too much on the whole dataset. 
- 
-My settings allow to get as much as features as possible, usually during
-quality control we loose a lot so I got very large in preprocessing (even if 
-that means getting noise instead of features) and the quality control steps 
-removes the bad ones. But you can do more tests.
+FInal notes: I think it might be worth it to check a bit some of the features that got gap-filled. See if they are actual features or noise. Also in your notes you precise that the noise = parameter in the centawave param is usually at 600. If i do that I get 1880 features (so quite less) and 3.5% missing values (instead of 4.00). It's less features but they could be higher quality features. It would be good to look what is best. You can extract chromatogram() of the areas of interest and see if they are actual features or not. DO this test on this dataset (QCs) it's too much on the whole dataset.
 
+My settings allow to get as much as features as possible, usually during quality control we loose a lot so I got very large in preprocessing (even if that means getting noise instead of features) and the quality control steps removes the bad ones. But you can do more tests.
