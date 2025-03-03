@@ -1,0 +1,719 @@
+---
+title: "Data analysis Imperial college, pilot study - QC only."
+format: html
+tbl-cap-location: bottom
+editor: visual
+author: Philippine Louail, Ana Sanchez Lorenzo
+date: 'Compiled: `r format(Sys.Date(), "%B %d, %Y")`'
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+library(quarto)
+knitr::opts_knit$set(root.dir = './')
+```
+
+# Data description
+
+\- Here describe what your data is, important experimental info,.... People
+should understand the most important info before running the code.
+
+## loading packages
+
+```{r packages-used, message=FALSE, warning=FALSE}
+## General bioconductor package
+library(BiocStyle)
+library(BiocParallel)
+library(knitr)
+
+## Data Import and handling
+library(readxl)
+library(MsExperiment)
+library(SummarizedExperiment)
+
+## Preprocessing of LC-MS data
+library(xcms)
+library(Spectra)
+library(MetaboCoreUtils)
+
+## Statistical analysis
+library(limma) # Differential abundance
+library(matrixStats) # Summaries over matrices
+
+## Visualisation
+library(pander)
+library(RColorBrewer)
+library(pheatmap)
+library(vioplot)
+library(ggfortify)   # Plot PCA
+library(gridExtra)   # To arrange multiple ggplots into single plots
+
+## Annotation
+library(AnnotationHub) # Annotation resources
+library(CompoundDb)    # Access small compound annotation data.
+library(MetaboAnnotation) # Functionality for metabolite annotation.
+```
+
+# Data import
+
+-   As I am going to use my own data I will use the normal way to import files
+
+-   DATA HAS TO BE LCMS1 \<- (there is already another function called data and
+    this name cannot be used anymore).
+
+-   NOTE: What metadata whould include? mzml file name, injection_index,
+    phenotype, sample_name(i.e.C02M), age
+
+```{r import, message=FALSE, warning=FALSE}
+# Data import
+#' read the sample descriptions from an xlsx sheet
+pd <- read_xlsx("metadata_lcms_rpos.xlsx", sheet = "samples") |>
+  as.data.frame()
+
+#' Import the data
+MZML_PATH <- file.path("mzml rpos")
+
+lcms1 <- readMsExperiment(file.path(MZML_PATH, "/", pd$mzML_file),
+                         sampleData = pd)
+idx_qc <- which(sampleData(lcms1)$phenotype == "QC")
+lcms1 <-lcms1[idx_qc]
+```
+
+```{r par-process}
+##RUN THIS PART FOR PARALLEL ANALYSIS
+#' Set up parallel processing using 2 cores
+if (.Platform$OS.type == "unix") {
+  register(MulticoreParam(3)) ###chunksize has to be be the same number. 
+ } else {
+     register(SnowParam(3))
+}
+```
+
+# Data organisation
+
+```{r}
+lcms1
+```
+
+Below we provide a brief overview of the data structure and content. The
+`sampleData()` function extracts sample information from the object.
+
+```{r phenodata}
+#| tbl-cap: "Table 1. Samples from the data set."
+sampleData(lcms1) |> kable()
+```
+
+There are `r length(sampleData(lcms1))` samples in this data set. We only use
+QCs here, this will allows to get an idea of the parameters needed for the
+overall analysis without wasting too much time duirng computation.
+
+We will define colors for each of the sample groups based on their sample group
+using the *RColorBrewer* package:
+
+```{r define-colors, include=FALSE}
+#' Define colors for the different QCs 
+col_phenotype <- brewer.pal(10, name = "Set3")
+names(col_phenotype) <- sampleData(lcms1)$sample_name
+
+col_sample <- col_phenotype[sampleData(lcms1)$sample_name]
+```
+
+The MS data of this experiment is stored as a *`Spectra` object* (from the
+`r Biocpkg("Spectra")` Bioconductor package) within the `MsExperiment` object
+and can be accessed using `spectra()` function. Each element in this object is
+a spectrum
+
+```{r}
+#' Access Spectra Object
+spectra(lcms1)
+```
+
+We can also summarize the number of spectra and their respective MS level. We
+only have MS1 here.
+
+```{r}
+#' Count the number of spectra with a specific MS level per file.
+spectra(lcms1) |>
+    msLevel() |>
+    split(fromFile(lcms1)) |>
+    lapply(table) |>
+    do.call(what = cbind)
+```
+
+The present data set thus contains only MS1 data, which is ideal for
+quantification of the signal.
+
+As another example, we below determine the retention time range for the entire
+data set.
+
+```{r}
+#' Retention time range for entire dataset
+spectra(lcms1) |>
+    rtime() |>
+    range()
+```
+
+# Data visualization and general quality assessment
+
+Effective visualization is paramount for inspecting and assessing the quality
+of MS data. For a general overview of our LC-MS data, we can:
+
+-   Combine all mass peaks from all (MS1) spectra of a sample into a single
+    spectrum in which each mass peak then represents the maximum signal of all
+    mass peaks with a similar *m/z*. This spectrum might then be called Base
+    Peak Spectrum (BPS), providing information on the most abundant ions of a
+    sample.
+-   Aggregate mass peak intensities for each spectrum, resulting in the Base
+    Peak Chromatogram (BPC). The BPC shows the highest measured intensity for
+    each distinct retention time (hence spectrum) and is thus orthogonal to the
+    BPS.
+-   Sum the mass peak intensities for each spectrum to create a Total Ion
+    Chromatogram (TIC).
+-   Compare the BPS of all samples in an experiment to evaluate similarity of
+    their ion content.
+-   Compare the BPC of all samples in an experiment to identify samples with
+    similar or dissimilar chromatographic signal.
+
+In addition to such general data evaluation and visualization, it is also
+crucial to investigate specific signal of e.g. internal standards or
+compounds/ions known to be present in the samples. By providing a reliable
+reference, internal standards help achieve consistent and accurate analytical
+results.
+
+## Spectra Data Visualization: BPS
+
+We can now generate BPS for each sample and `plot()` them.
+
+```{r bps}
+#| fig-cap: "Figure 1. BPS of all samples."
+#' Combining all spectra per file into a single spectrum
+bps <- spectra(lcms1) |>
+    bin(binSize = 0.01) |>
+    combineSpectra(f = fromFile(lcms1), intensityFun = max, ppm = 3)
+
+#' Plot the base peak spectra
+par(mar = c(2, 1, 1, 1))
+plotSpectra(bps, main= "")
+```
+
+Next to the visual inspection above, we can also calculate and express the
+similarity between the BPS with a heatmap. Below we use the `compareSpectra()`
+function to calculate pairwise similarities between all BPS and use then the
+`pheatmap()` function from the *pheatmap* package to cluster and visualize this
+result.
+
+```{r compare-spectra}
+#| fig-cap: "Figure 2. Heatmap of MS signals similarities."
+#' Calculate similarities between BPS
+sim_matrix <- compareSpectra(bps)
+
+#' Add sample names as rownames and colnames
+rownames(sim_matrix) <- colnames(sim_matrix) <- sampleData(lcms1)$sample_name
+ann <- data.frame(phenotype = sampleData(lcms1)[, "sample_name"])
+rownames(ann) <- rownames(sim_matrix)
+
+#' Plot the heatmap
+pheatmap(sim_matrix, annotation_col = ann,
+         annotation_colors = list(sample_name = col_phenotype))
+```
+
+IO don't see any weird grouping. No clear injection dependency for ex.
+
+## Chromatographic Data Visualization: BPC and TIC
+
+```{r bpc1, echo=TRUE}
+#| fig-cap: "Figure 5. BPC of all samples colored by phenotype."
+#' Extract and plot BPC for full data
+bpc <- chromatogram(lcms1, aggregationFun = "max")
+
+plot(bpc, col = paste0(col_sample, 80), main = "BPC", lwd = 1.5)
+grid()
+legend("topright", col = col_phenotype,
+       legend = names(col_phenotype), lty = 1, lwd = 2, horiz = TRUE,
+       bty = "n")
+```
+
+I don't think we need to filter anything. Tehre seem to be signall all along
+the rt axis. I don't see any big rt shifts anywhere, a little one around 200,
+we will see if that get fixed later.
+
+There seem to be some variation in intensity however. To be kept in mind.
+
+We can also here compare similarities of the BPCs in a heatmap.
+
+```{r heatmap1}
+#| fig-cap: "Figure 7. Heatmap of BPC similarities."
+#' Total ion chromatogram
+tic <- chromatogram(lcms1, aggregationFun = "sum") |>
+  bin(binSize = 2)
+
+#' Calculate similarity (Pearson correlation) between BPCs
+ticmap <- do.call(cbind, lapply(tic, intensity)) |>
+  cor()
+
+#' Add sample names as rownames and colnames
+rownames(ticmap) <- colnames(ticmap) <- sampleData(lcms1)$sample_name
+ann <- data.frame(phenotype = sampleData(lcms1)[, "sample_name"])
+rownames(ann) <- rownames(ticmap)
+
+#' Plot heatmap
+pheatmap(ticmap, annotation_col = ann,
+         annotation_colors = list(sample_name = col_phenotype))
+```
+
+Bit of grouping of some samples, do you have an idea for the pattern explanation
+?
+
+### Known compounds
+
+Throughout the entire process, it is crucial to have reference points within
+the dataset, such as well-known ions. Most experiments nowadays include
+internal standards (IS), and it was the case here. We strongly recommend using
+them for visualization throughout the entire analysis.
+
+-   Describe your standards quickly
+
+We also plot all of them and save the images locally to check manually.
+
+```{r EIC_extract_for_internal_standard, include=FALSE}
+
+#' get the list
+intern_standard <- read_xlsx("standard_compound_addition.xlsx") |> 
+  as.data.frame()
+intern_standard <- intern_standard[!is.na(intern_standard$POS), ]
+rownames(intern_standard) <- intern_standard$abbreviation
+
+#'generate calcualte formula
+intern_standard$mass <- calculateMass(intern_standard$formula)
+intern_standard$mz <- mapply(intern_standard$mass,
+                             intern_standard$POS,
+                             FUN = mass2mz)
+
+#' Fit for each standards
+intern_standard$mzmin <- intern_standard$mz - 0.02
+intern_standard$mzmax <- intern_standard$mz + 0.02
+intern_standard$rtmin <- intern_standard$RT - 15
+intern_standard$rtmax <- intern_standard$RT + 15
+
+#' Extract the EICs
+eics <- chromatogram(lcms1,
+                     mz = as.matrix(intern_standard[, c("mzmin", "mzmax")]),
+                     rt = as.matrix(intern_standard[, c("rtmin", "rtmax")]),
+                     chunkSize = 2)
+
+rownames(fData(eics)) <- intern_standard$abbreviation
+
+dr <- "EIC_IS/QCs/raw/"
+dir.create(dr, recursive = TRUE, showWarnings = FALSE)
+for (i in seq_len(nrow(intern_standard))) {
+    png(paste0(dr, "EIC_", intern_standard$abbreviation[i], ".png"),
+        width = 12, height = 8, units = "cm", res = 600, pointsize = 4)
+    plot(eics[i, ], main = intern_standard$name[i],
+         col = paste0(col_sample, 80))
+    grid()
+    legend("topright", col = col_phenotype,
+           legend = names(col_phenotype), lty = 1)
+    abline(v = intern_standard$RT[i], col = "red", lty = 3)
+    dev.off()
+}
+
+##It seem pretty consistent that QC10 has lower intensity (as well as 8 and 9)
+## there might be  an injection index dependence intensity decrease. 
+## All the IS seem to be detected, nice. 
+```
+
+# Data preprocessing
+
+## Chromatographic peak detection
+
+The initial preprocessing step involves detecting intensity peaks along the
+retention time axis, the so called *chromatographic peaks*. To achieve this, we
+employ the `findChromPeaks()` function within *xcms*.
+
+```{r Default-centwave-param-test}
+#' Use default Centwave parameter
+param <- CentWaveParam()
+
+#' Look at the default parameters
+param
+
+#' Run on standards
+is_test <- findChromPeaks(eics, param = param)
+chromPeaks(is_test) # no peaks are found. therefore need to improve settings
+```
+
+While *CentWave* is a highly performant algorithm, it requires to be costumized
+to each dataset.
+
+Below we estimate the ppm
+
+```{r ppm-parameter1}
+#' Restrict the data to signal from cystine in the first sample OPTIMISE PPM
+cst <- lcms1[5L] |>
+  spectra() |>
+  filterRt(rt = c(430, 439)) |>
+  filterMzRange(mz = fData(eics)["PC_18_0_18_2", c("mzmin", "mzmax")])
+
+#' Show the number of peaks per m/z filtered spectra
+lengths(cst)
+
+#' Calculate the difference in m/z values between scans
+mz_diff <- cst |>
+    mz() |>
+    unlist() |>
+    diff() |>
+    abs()
+
+#' Express differences in ppm
+range(mz_diff * 1e6 / mean(unlist(mz(cst)), na.rm = FALSE), na.rm = FALSE)
+```
+
+Very small ppm here so I think we could go with 5ppm for the settings of peak
+detection. But I decided to follow the recommendation below for the ppm.
+
+NOTE: NPC parameters; ds \<- xcmsSet(method="centWave", noise=600, ppm=25,
+prefilter=c(8, 6000), snthresh = 10,\
+peakwidth=c(1.5,5), mzdiff=0.01, mzCenterFun="wMean", integrate=2, lock=F,
+fitgauss=F, BPPARAM=SnowParam (workers = workers),
+
+```{r}
+#' Parameters adapted for chromatographic peak detection on EICs.
+param <- CentWaveParam(peakwidth = c(5, 20), ppm = 25, integrate = 2,
+                       snthresh = 5) 
+
+#' Evaluate on the cystine ion
+is_test <- findChromPeaks(eics, param = param)
+chromPeaks(is_test)
+nrow(chromPeaks(is_test))
+```
+
+Now we run on the entire dataset.
+
+-   We revert the value for parameter `snthresh` to its default, because, as
+    mentioned above, background noise estimation is more reliable when
+    performed on the full data set.
+
+-   Parameter `chunkSize` of `findChromPeaks()` defines the number of data
+    files that are loaded into memory and processed simultaneously. This
+    parameter thus allows to fine-tune the memory demand as well as performance
+    of the chromatographic peak detection step.
+
+```{r run-find-chrompeak-on-entire-dataset}
+#' Using the same settings, but with default snthresh
+param <- CentWaveParam(peakwidth = c(5, 20), ppm = 25, integrate = 2, snthresh = 7)
+lcms1<- findChromPeaks(lcms1, param = param, chunkSize = 3)
+
+#' Update EIC internal standard object
+eics_peakdetect <- chromatogram(lcms1,
+                       rt = as.matrix(intern_standard[, c("rtmin", "rtmax")]),
+                       mz = as.matrix(intern_standard[, c("mzmin", "mzmax")]))
+fData(eics_peakdetect) <- fData(eics)
+
+## plot 
+dr <- "EIC_IS/QCs/peakdetect/"
+dir.create(dr, recursive = TRUE, showWarnings = FALSE)
+for (i in seq_len(nrow(intern_standard))) {
+    png(paste0(dr, "EIC_", intern_standard$abbreviation[i], ".png"),
+        width = 12, height = 8, units = "cm", res = 600, pointsize = 4)
+    plot(eics_peakdetect[i, ], main = intern_standard$name[i],
+         col = paste0(col_sample, 80))
+    grid()
+    legend("topright", col = col_phenotype,
+           legend = names(col_phenotype), lty = 1)
+    abline(v = intern_standard$RT[i], col = "red", lty = 3)
+    dev.off()
+}
+## they all look like they were detected.
+
+save(lcms1, file = "preprocessed_lcms1.RData")
+```
+
+```{r}
+## check numbmer of peaks in the is. We aim for 120 (10qc x 12stds). 
+chromPeaks(eics_peakdetect) |> nrow()
+```
+
+We get some splitting, 2 reasons i can think of:
+
+-   Some eics show a second little peak, maybe these extra peak come from
+    there.
+-   Otherwise it's from split peaks, which often happens when we have noise,
+    which we do have a bit on some IS. let's see if the next step decrease this
+    number.
+
+### Refine identified chromatographic peaks
+
+The identification of chromatographic peaks using the *CentWave* algorithm can
+sometimes result in artifacts, such as overlapping or split peaks. To address
+this issue, the `refineChromPeaks()` function is utilized, in conjunction with
+`MergeNeighboringPeaksParam`, which aims at merging such split peaks.
+
+```{r test-merging}
+#| fig-cap: "Figure 14. Examples of CentWave peak detection artifacts after merging."
+#' set up the parameter
+param <- MergeNeighboringPeaksParam(expandRt = 7, expandMz = 0.0015,
+                                    minProp = 0.75)
+
+#' Perform the peak refinement on the EICs
+eics_refined <- refineChromPeaks(eics_peakdetect, param = param)
+
+#' check peaks number again
+chromPeaks(eics_refined) |> nrow() ## no changes
+```
+
+```{r}
+#' Apply on whole dataset
+lcms1 <- refineChromPeaks(lcms1, param = param, chunkSize = 3)
+chromPeakData(lcms1)$merged |>
+                      table()
+```
+
+We check the number of identified chromatographic
+peaks in all samples of a data set can help spotting potentially problematic
+samples. Below we count the number of chromatographic peaks per sample and show
+these numbers in a table.
+
+```{r}
+#| tbl-cap: "Table 5. Samples and number of identified chromatographic peaks."
+#' Count the number of peaks per sample and summarize them in a table.
+data.frame(sample_name = sampleData(lcms1)$sample_name,
+           peak_count = as.integer(table(chromPeaks(lcms1)[, "sample"]))) |>
+    kable(format = "pipe")
+```
+
+Pretty big decrease with injection index... Definitely linked with drop in 
+intensity.
+
+## Retention time alignment
+
+Not running it here, will run it on the overall dataset and base it on QC 
+samples. 
+
+## Correspondence
+
+When we do correspondence we base it on the different samples group = the 
+sample that we expect have the same number of peaks. 
+
+Here we have one group, QCs. 
+
+```{r}
+param <- PeakDensityParam(sampleGroups = sampleData(lcms1)$phenotype, bw = 2)
+
+dr <- "EIC_IS/QCs/density/"
+dir.create(dr, recursive = TRUE, showWarnings = FALSE)
+for (i in seq_len(nrow(intern_standard))) {
+    png(paste0(dr, "EIC_", intern_standard$abbreviation[i], ".png"),
+        width = 12, height = 8, units = "cm", res = 600, pointsize = 4)
+    plotChromPeakDensity(eics_peakdetect[i, ], param = param,
+                         main = intern_standard$name[i],   
+                         col = paste0(col_sample, "80"),
+    peakCol = col_sample[chromPeaks(eics_peakdetect[i, ])[, "sample"]],
+    peakBg = paste0(col_sample[chromPeaks(eics_peakdetect[i, ])[, "sample"]], 20),
+    peakPch = 16)
+    grid()
+    legend("topright", col = col_phenotype,
+           legend = names(col_phenotype), lty = 1)
+    abline(v = intern_standard$RT[i], col = "red", lty = 3)
+    dev.off()
+}
+
+## results are great !! we get all 10 peaks in each is
+```
+
+
+```{r}
+#' Define the settings for the param
+param <- PeakDensityParam(sampleGroups = sampleData(lcms1)$phenotype,
+                          minFraction = 0.75, binSize = 0.01, ppm = 10,
+                          bw = 2)
+
+#' Apply to whole data
+lcms1 <- groupChromPeaks(lcms1, param = param)
+```
+
+
+```{r}
+#' Plot again
+eics_dens <- chromatogram(lcms1,
+                       rt = as.matrix(intern_standard[, c("rtmin", "rtmax")]),
+                       mz = as.matrix(intern_standard[, c("mzmin", "mzmax")]))
+fData(eics_dens) <- fData(eics)
+
+dr <- "EIC_IS/QCs/density2/"
+dir.create(dr, recursive = TRUE, showWarnings = FALSE)
+for (i in seq_len(nrow(intern_standard))) {
+    png(paste0(dr, "EIC_", intern_standard$abbreviation[i], ".png"),
+        width = 12, height = 8, units = "cm", res = 600, pointsize = 4)
+    plotChromPeakDensity(eics_dens[i, ], param = param,
+                         main = intern_standard$name[i],   
+                         col = paste0(col_sample, "80"),
+    peakCol = col_sample[chromPeaks(eics_dens[i, ])[, "sample"]],
+    peakBg = paste0(col_sample[chromPeaks(eics_dens[i, ])[, "sample"]], 20),
+    peakPch = 16)
+    grid()
+    legend("topright", col = col_phenotype,
+           legend = names(col_phenotype), lty = 1)
+    abline(v = intern_standard$RT[i], col = "red", lty = 3)
+    dev.off()
+}
+```
+
+Another interesting information to look a the the distribution of these
+features along the retention time axis.
+
+```{r}
+#| tbl-cap: "Table 5. Distribution of features along the retention time axis."
+# Bin features per RT slices
+vc <- featureDefinitions(lcms1)$rtmed
+breaks <- seq(0, max(vc, na.rm = TRUE) + 1, length.out = 15) |>
+    round(0)
+cuts <- cut(vc, breaks = breaks, include.lowest = TRUE)
+
+table(cuts) |>
+    kable(format = "pipe")
+```
+
+The results from the correspondence analysis are now stored, along with the
+results from the other preprocessing steps, within our `XcmsExperiment` result
+object.
+
+This data frame provides the average *m/z* and retention time (in columns
+`"mzmed"` and `"rtmed"`) that characterize a LC-MS feature. Column, `"peakidx"`
+contains the indices of all chromatographic peaks that were assigned to that
+feature. The actual abundances for these features, which represent also the
+final preprocessing results, can be extracted with the `featureValues()`
+function:
+
+```{r}
+#' Extract feature abundances
+featureValues(lcms1, method = "sum") |>
+    head()
+```
+
+We can note that some features (e.g. F0002) have missing values in
+some samples. This is expected to a certain degree as not in all samples
+features, respectively their ions, need to be present. We will address this in
+the next section.
+
++ this quick check kinda make sense because we saw that there was less peaks in
+in the later QCs. 
+
+```{r}
+nrow(featureDefinitions(lcms1))
+```
+
+
+## Gap filling
+
+```{r}
+#' Percentage of missing values
+sum(is.na(featureValues(lcms1))) /
+    length(featureValues(lcms1)) * 100
+```
+That's a nice number. 
+
+
+```{r}
+#' Fill in the missing values in the whole dataset
+lcms1 <- fillChromPeaks(lcms1, param = ChromPeakAreaParam(), chunkSize = 3)
+
+#' Percentage of missing values after gap-filling
+sum(is.na(featureValues(lcms1))) /
+    length(featureValues(lcms1)) * 100
+```
+ The gap-filling rescue ALL missing values. 
+
+```{r Detected-vs-filled-signal1}
+#' Get only detected signal in QC samples
+vals_detect <- featureValues(lcms1, filled = FALSE)
+
+#' Get detected and filled-in signal
+vals_filled <- featureValues(lcms1)
+
+#' Replace detected signal with NA
+vals_filled[!is.na(vals_detect)] <- NA
+
+#' Identify features with at least one filled peak
+has_filled <- is.na(rowSums(vals_detect))
+
+#' Calculate row averages for features with missing values
+avg_detect <- rowMeans(vals_detect[has_filled, ], na.rm = TRUE)
+avg_filled <- rowMeans(vals_filled[has_filled, ], na.rm = TRUE)
+
+#' Plot the values against each other (in log2 scale)
+plot(log2(avg_detect), log2(avg_filled),
+     xlim = range(log2(c(avg_detect, avg_filled)), na.rm = TRUE),
+     ylim = range(log2(c(avg_detect, avg_filled)), na.rm = TRUE),
+     pch = 21, bg = "#00000020", col = "#00000080")
+grid()
+abline(0, 1)
+```
+
+The detected (x-axis) and gap-filled (y-axis) values for QC samples are highly
+correlated. Especially for higher abundances, the agreement is very high, while
+for low intensities, as can be expected, differences are higher and trending to
+below the correlation line. Below we, in addition, fit a linear regression line
+to the data and summarize its results
+
+```{r}
+#' fit a linear regression line to the data
+l <- lm(log2(avg_filled) ~ log2(avg_detect))
+summary(l)
+```
+
+The linear regression line has a slope of `r round(coef(l)[2], 2)` and an
+intercept of `r round(coef(l)[1], 2)`. This indicates that the filled-in signal
+is on average `r round(coef(l)[2], 2)` times higher than the detected signal.
+
+## Preprocessing results
+
+The final results of the LC-MS data preprocessing are stored within the
+`XcmsExperiment` object. As well as the exact preprocessing performed and each
+setting used. 
+
+```{r Process-history}
+#' Check first step of the process history
+processHistory(lcms1)[[1]]
+```
+
+
+```{r}
+#' Extract results as a SummarizedExperiment
+res <- quantify(lcms1, method = "sum", filled = FALSE)
+res
+```
+
+
+```{r}
+assays(res)$raw_filled <- featureValues(lcms1, method = "sum",
+                                        filled = TRUE )
+
+#' Different assay in the SummarizedExperiment object
+assayNames(res)
+```
+
+
+
+```{r}
+#' Save the preprocessing results
+#' d <- file.path(tempdir(), "objects/lcms1")
+# saveMsObject(lcms1, AlabasterParam(path = d))
+#' for now let's do R object because the previous method is not implemented yet.
+save(lcms1, file = "preprocessed_lcms1.RData")
+```
+
+FInal notes: I think it might be worth it to check a bit some of the features that
+got gap-filled. See if they are actual features or noise. 
+Also in your notes you precise that the noise = parameter in the centawave param 
+is usually at 600. If i do that I get 1880 features (so quite less) and 3.5% 
+missing values (instead of 4.00). It's less features but they
+could be higher quality features. It would be good to look what is best. 
+You can extract chromatogram() of the areas of interest and see if they are actual 
+features or not. 
+ DO this test on this dataset (QCs) it's too much on the whole dataset. 
+ 
+My settings allow to get as much as features as possible, usually during
+quality control we loose a lot so I got very large in preprocessing (even if 
+that means getting noise instead of features) and the quality control steps 
+removes the bad ones. But you can do more tests.
+
