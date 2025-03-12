@@ -9,12 +9,3 @@
 LPOS_CONV/heatmap
 *.Rt alignment results
 LPOS_CONV/lpos_conv_preprocessing_qc.qmd
-lpos_conv_preprocessing_qc.qmd
-LPOS_CONV_STRICT/lpos_conv_preprocessing_full_strict.qmd
-LPOS_CONV_STRICT/metadata_lcms_rpos.xlsx
-LPOS_RAMMP/lpos_conv_preprocessing_full_rammp.qmd
-LPOS_RAMMP/metadata_lcms_rpos.xlsx
-LPOS_RAMMP/README.md
-LPOS_RAMMP/standard_compound_addition.xlsx
-standard_compound_addition.xlsx
-LPOS_CONV_STRICT/README.md
