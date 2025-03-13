@@ -33,23 +33,36 @@ spiked in devices to simulate sample collection through fingerprick.
 Total number of samples: 66
 
 double blanks:
-- BLANK_001(beginning)
-- BLANK_002 (beginning)
-- BLANK_003 (beginning)
-- BLANK_END
 
-Blanks from devices: 
-- Blank_W
-- Blank_M
-- Blank_C
+-   BLANK_001(beginning)
 
-Randomise Samples: 
-- 10 x WHATMAN
-- 10 x MITRA
-- 10 x CAPITAINER
-- 10 x PLASMA
-- 10 x BLOOD
-- 10 x QCs
+-   BLANK_002 (beginning)
+
+-   BLANK_003 (beginning)
+
+-   BLANK_END
+
+Blanks from devices:
+
+-   Blank_W
+
+-   Blank_M
+
+-   Blank_C
+
+Randomise Samples:
+
+-   10 x WHATMAN
+
+-   10 x MITRA
+
+-   10 x CAPITAINER
+
+-   10 x PLASMA
+
+-   10 x BLOOD
+
+-   10 x QCs
 
 [**Sample preparation and acquisition**]{.underline}
 
@@ -145,7 +158,7 @@ sampleData(lcms1) |> kable()
 ```
 
 METABONAUT: when I am rendering this dataset, the message below says the lenght
-of sampleData(lcms1) is 8, like if there where 8 samples but is not correct. 
+of sampleData(lcms1) is 8, like if there where 8 samples but is not correct.
 
 There are `r length(sampleData(lcms1))` samples in this data set. We only use
 QCs here, this will allows to get an idea of the parameters needed for the
@@ -243,8 +256,8 @@ results.
 
 ## Spectra Data Visualization: BPS
 
-(This is going to take way too long so not running this. Maybe run it if you have
-some suspicions on the dataset later).
+(This is going to take way too long so not running this. Maybe run it if you
+have some suspicions on the dataset later).
 
 (Find in metabonaut)
 
@@ -328,10 +341,10 @@ legend("topright", col = col_device,
 
 ```
 
-We can also here compare similarities of the BPCs in a heatmap. 
-REMINDER: include png function with loop. Before plotting the heatmap after rt
-filtering, I create a new column with the same device grouping, but with
-different blank groups: BLANK_1, BLANK_2, BLANK_W, BLANK_M, BLANK_C, BLANK_END.
+We can also here compare similarities of the BPCs in a heatmap. REMINDER:
+include png function with loop. Before plotting the heatmap after rt filtering,
+I create a new column with the same device grouping, but with different blank
+groups: BLANK_1, BLANK_2, BLANK_W, BLANK_M, BLANK_C, BLANK_END.
 
 ```{r heatmap1}
 #| fig-cap: "Figure 4. Heatmap of TIC similarities after rt filtering."
@@ -527,7 +540,7 @@ param <- PeakGroupsParam(minFraction = 0.9, extraPeaks = 50, span = 0.5,
 lcms1 <- adjustRtime(lcms1, param = param)
 ```
 
-```{r rt_alignment_3, eval=!file.exists("align_lcms1.RData")}
+```{r rt_alignment_3}
 #| fig-cap: "Figure 6. Retention time alignment results."
 #' Visualize alignment results
 plotAdjustedRtime(lcms1, col = paste0(col_sample, 80), peakGroupsPch = 1, cex.lab = 1.2)
@@ -1376,9 +1389,10 @@ legend("topright", col = col_device,
 
 
 ```
+
 NOTE: the colors of this plots are not corrected. Need to fix it. 1st samples
-should be yellow (QC).
-METABONAUT: typo normalized title. NOTE: fix legend and colors in RLA plot
+should be yellow (QC). METABONAUT: typo normalized title. NOTE: fix legend and
+colors in RLA plot
 
 #### CV after normalisation
 
