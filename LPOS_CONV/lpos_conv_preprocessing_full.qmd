@@ -1,0 +1,1638 @@
+---
+title: "Data analysis of Pilot Study from Imperial - Full data."
+format: html
+tbl-cap-location: bottom
+editor: visual
+date: 'Compiled: `r format(Sys.Date(), "%B %d, %Y")`'
+author: Philippine Louail, Ana Sanchez Lorenzo
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+library(quarto)
+knitr::opts_knit$set(root.dir = './')
+```
+
+# Data description
+
+The aim of this pilot study is to compare three microsampling devices profiles
+with conventional liquid samples, plasma and whole blood, in an untargeted LCMS
+analysis. The final objective is to determine which device perform a similar
+profile to plasma, gold standard sample, generating less artefacts. For this,
+there will be a qualitative comparison (number of features, metabolites
+annotated) and a semi-quantitative comparison (intensity and statistical
+differences).
+
+[**Samples of study**]{.underline}
+
+The samples used in this study were venous blood samples collected from 10
+healthy individuals ( 5 men and 5 women) in EDTA tubes. Part of this blood was
+used as whole blood sample, part was used for plasma extraction and part was
+spiked in devices to simulate sample collection through fingerprick.
+
+Total number of samples: 66
+
+double blanks:
+
+-   BLANK_001(beginning)
+
+-   BLANK_002 (beginning)
+
+-   BLANK_003 (beginning)
+
+-   BLANK_END
+
+Blanks from devices:
+
+-   Blank_W
+
+-   Blank_M
+
+-   Blank_C
+
+Randomise Samples:
+
+-   10 x WHATMAN
+
+-   10 x MITRA
+
+-   10 x CAPITAINER
+
+-   10 x PLASMA
+
+-   10 x BLOOD
+
+-   10 x QCs
+
+[**Sample preparation and acquisition**]{.underline}
+
+Samples were treated H2O and IPA for protein precipitation and lipids
+extraction. Then extracts were analysed in a UPLC-ESI-QTOF system (Synapt-G2S)
+(Waters Corporation) using resolution mode for MS1 and FastDDA for MS2 data.
+
+## Loading packages
+
+```{r packages-used, message=FALSE, warning=FALSE}
+#| code-fold: true
+#| code-summary: "Show the code"
+## General bioconductor package
+library(BiocStyle)
+library(BiocParallel)
+library(knitr)
+
+## Data Import and handling
+library(readxl)
+library(MsExperiment)
+library(SummarizedExperiment)
+
+## Preprocessing of LC-MS data
+library(xcms)
+library(Spectra)
+library(MetaboCoreUtils)
+
+## Statistical analysis
+library(limma) # Differential abundance
+library(matrixStats) # Summaries over matrices
+
+## Visualisation
+library(pander)
+library(RColorBrewer)
+library(pheatmap)
+library(vioplot)
+library(ggfortify)   # Plot PCA
+library(gridExtra)   # To arrange multiple ggplots into single plots
+library(grid)
+
+## Annotation
+library(AnnotationHub) # Annotation resources
+library(CompoundDb)    # Access small compound annotation data.
+library(MetaboAnnotation) # Functionality for metabolite annotation.
+```
+
+# Data import
+
+```{r import, message=FALSE}
+# Data import
+#' read the sample descriptions from an xlsx sheet
+pd <- read_xlsx("metadata_lcms_rpos.xlsx", sheet = "samples") |>
+  as.data.frame()
+
+#' Import the data
+MZML_PATH <- file.path("data/lpos_conv")
+
+lcms1 <- readMsExperiment(file.path(MZML_PATH, "/", pd$mzML_file),
+                          sampleData = pd)
+```
+
+```{r par-process}
+#' Set up parallel processing using 3 cores
+if (.Platform$OS.type == "unix") {
+  register(MulticoreParam(4)) ### chunksize has to be be the same number. 
+ } else {
+     register(SnowParam(4))
+}
+```
+
+
+## Data organisation
+
+## Indexing per sample group
+
+```{r indexing, message=FALSE}
+# Index per sample group
+idx_qc <- sampleData(lcms1)$device == "QC"
+#idx_qc <- which(sampleData(lcms1)$device == "QC")
+idx_blank <- sampleData(lcms1)$device == "BLANK"
+idx_blank_qc <- sampleData(lcms1)$device %in% c("QC","BLANK")
+idx_double_blank <- sampleData(lcms1)$blank_type %in% c("BLANK_001", "BLANK_002", "BLANK_END")
+```
+
+```{r lcms1}
+lcms1
+```
+
+Below we provide a brief overview of the data structure and content. The
+`sampleData()` function extracts sample information from the object.
+
+```{r phenodata}
+#| tbl-cap: "Table 1. Samples from the data set."
+sampleData(lcms1) |> kable()
+```
+
+METABONAUT: when I am rendering this dataset, the message below says the lenght
+of sampleData(lcms1) is 8, like if there where 8 samples but is not correct.
+(jo: true - that's a bug in Metabonaut, it should be `nrow` instead as `length`
+just gets the number of columns, not rows = samples) 
+
+There are `r nrow(sampleData(lcms1))` samples in this data set. We only use QCs
+here, this will allows to get an idea of the parameters needed for the overall
+analysis without wasting too much time during computation.
+
+## Define colors
+
+We will define colors for each of the sample groups based on their sample group
+using the *RColorBrewer* package:
+
+```{r define-colors}
+#| echo: true
+#' Define colors for full dataset
+leg_full <- brewer.pal(12, name = "Set3")[c(1, 12, 7, 5, 10, 4, 6)]
+names(leg_full) <- unique(sampleData(lcms1)$device)
+col_sample <- leg_full[sampleData(lcms1)$device]
+#leg_full > leg_full
+
+#' Define colors for only QCs in injection order
+leg_qc <- brewer.pal(10, name = "Set3")
+names(leg_qc)  <- unique(sampleData(lcms1[idx_qc])$sample_name)
+col_qc_inj_order <-leg_qc[sampleData(lcms1[idx_qc])$sample_name]
+
+#' Define colors for full dataset without blanks
+leg_noblank <- leg_full[c(-1)]
+col_noblank <- leg_noblank[sampleData(lcms1[!idx_blank])$device]
+
+#' Define colors for samples only 
+leg_devices <- leg_full[-c(1,2)]
+col_devices <- leg_devices[sampleData(lcms1[!idx_blank_qc])$device]
+
+#' Define colors for full dataset with different blank type
+leg_blank_type <- brewer.pal(12, name ="Set3")[c(2, 9, 11, 3, 1, 12, 7, 5, 10, 4, 6, 8)]
+names(leg_blank_type) <- unique(sampleData(lcms1)$blank_type)
+col_sample_blank_type <- leg_blank_type[sampleData(lcms1)$blank_type]
+```
+
+The MS data of this experiment is stored as a *`Spectra` object* (from the
+`r Biocpkg("Spectra")` Bioconductor package) within the `MsExperiment` object
+and can be accessed using `spectra()` function. Each element in this object is a
+spectrum.
+
+```{r spectra-objec, eval = FALSE}
+#' Access Spectra Object
+spectra(lcms1)
+```
+
+We can also summarize the number of spectra and their respective MS level. We
+only have MS1 here.
+
+```{r number_spectra, eval = FALSE}
+#' Count the number of spectra with a specific MS level per file.
+spectra(lcms1) |>
+    msLevel() |>
+    split(fromFile(lcms1)) |>
+    lapply(table) |>
+    do.call(what = cbind)
+```
+
+The present data set thus contains only MS1 data, which is ideal for
+quantification of the signal. Also all the samples seem to have a similar number
+of scans, which is good.
+
+As another example, we below determine the retention time range for the entire
+data set.
+
+```{r rt-range}
+#' Retention time range for entire dataset
+spectra(lcms1) |>
+    rtime() |>
+    range()
+```
+
+Data obtained from LC-MS experiments are typically analyzed along the retention
+time axis, while MS data is organized by spectrum, orthogonal to the retention
+time axis.
+
+# Data visualization and general quality assessment
+
+Effective visualization is paramount for inspecting and assessing the quality of
+MS data. For a general overview of our LC-MS data, we can:
+
+-   Combine all mass peaks from all (MS1) spectra of a sample into a single
+    spectrum in which each mass peak then represents the maximum signal of all
+    mass peaks with a similar *m/z*. This spectrum might then be called **Base
+    Peak Spectrum (BPS)**, providing information on the most abundant ions of a
+    sample.
+-   Aggregate mass peak intensities for each spectrum, resulting in the **Base
+    Peak Chromatogram (BPC)**. The BPC shows the highest measured intensity for
+    each distinct retention time (hence spectrum) and is thus orthogonal to the
+    BPS.
+-   Sum the mass peak intensities for each spectrum to create a **Total Ion
+    Chromatogram (TIC).**
+-   **Compare the BPS** of all samples in an experiment to evaluate similarity
+    of their ion content.
+-   **Compare the BPC** of all samples in an experiment to identify samples with
+    similar or dissimilar chromatographic signal.
+
+In addition to such general data evaluation and visualization, it is also
+crucial to investigate **specific signal** of e.g. internal standards or
+compounds/ions known to be present in the samples. By providing a reliable
+reference, internal standards help achieve consistent and accurate analytical
+results.
+
+## Spectra Data Visualization: BPS
+
+(This is going to take way too long so not running this. Maybe run it if you
+have some suspicions on the dataset later).
+
+(Find in metabonaut)
+
+## Chromatographic Data Visualization: BPC and TIC
+
+```{r bpc1}
+#| fig-cap: "Figure 1. BPC before rt filtering of all samples colored by device."
+#| code-fold: true
+#| code-summary: "Show the code"
+#' Extract and plot BPC for full data
+bpc <- chromatogram(lcms1, aggregationFun = "max")
+
+plot(bpc, col = paste0(col_sample, 80), main = "BPC", lwd = 1.5)
+grid()
+legend("topright", col = leg_full, legend = names(leg_full), 
+       lty = 1, lwd = 2, horiz = FALSE,
+       bty = "n", cex = 0.9)
+```
+Evaluating the NPC, we detecte a intense peak between 0 to 60 seconds of
+features that didn't retain in the columns and a typical base line peak coming 
+from the solvent. Also after 700 there shouldn 't be any interesting features. 
+Rentention time filtering will need to be performed. 
+
+We can also compare similarities of the TICs in the heatmap. Thus we bin() the 
+chromatographic signal per sample along the retention time acis into a bins of 2
+seconds resulting in the same number of bins/data points. We can then calculate 
+the pairwise similarities between these data vectors using the cor() function 
+and visualize the result using pheatmap(). 
+
+```{r heatmap}
+#| fig-cap: "Figure 2. Heatmap of TIC similarities before filtering."
+#| code-fold: true
+#| code-summary: "Show the code"
+#' Total ion chromatogram
+tic <- chromatogram(lcms1, aggregationFun = "sum") |>
+  bin(binSize = 2)
+
+#' Calculate similarity (Pearson correlation) between BPCs
+ticmap <- do.call(cbind, lapply(tic, intensity)) |>
+  cor()
+
+#' Add sample names as rownames and colnames
+rownames(ticmap) <- colnames(ticmap) <- sampleData(lcms1)$sample_name
+ann <- data.frame(device = sampleData(lcms1)[, "device"])
+rownames(ann) <- rownames(ticmap)
+
+#' Plot heatmap
+pheatmap(ticmap, annotation_col = ann,
+         annotation_colors = list(device = leg_full),
+         show_rownames = FALSE, show_colnames = FALSE)
+```
+We can see separation of samples per group. Only Blood, Whatman and Mitra
+samples are mixed, probably due to the same blood extraction. However,
+Capitainer is separated from the others. This disappears if we filter the rt and
+plot the heatmap again.
+
+After filtering, we realised the Heatmap had a different layout. At the
+beginning it seems the Capitainer devices were different to the rest. However,
+now it seems all devices are grouped together. That is way, I want to plot the
+heatmap again to check this variation is due to filtering or due to another
+modification I am not aware of .
+
+Evaluating which part of the chromatogram, along the retention time contributes
+most to the observed differences, e.g. of Whatman against the other samples.
+
+```{r evalution-chromatogram-differences}
+#| fig-height: 5
+#| fig-width: 10
+ticm <- do.call(cbind, lapply(tic, intensity))
+rownames(ticm) <- rtime(tic[, 1L])
+colnames(ticm) <- sampleData(lcms1)$sample_name
+#' transpose matrix such that rows are samples and columns retention times
+ticm <- t(ticm)
+
+#' log2 transforming the intensities and centering them by retention time bin
+#' such that each column contains the relative tic for that retention time
+ticm_c <- log2(ticm) |>
+    scale(center = TRUE, scale = FALSE)
+pheatmap(ticm_c, annotation_row = ann, cluster_cols = FALSE, 
+         annotation_colors = list(device = leg_full))
+```
+
+The heatmap above represents the relative TIC signal per 2-second retention time
+bins along the x-axis (relative TIC compared to the average TIC across all
+samples in that bin). Samples are shown in columns, and clustered based on their
+similarity. Microsampling devices differ mostly in the beginning of the LC. The
+largest difference can be observed between Capitainer and all other samples.
+Below we repeat the plot, focusing on the first 30 seconds of the LC.
+
+
+```{r}
+tmp <- ticm_c[, as.numeric(colnames(ticm_c)) < 30]
+pheatmap(tmp, annotation_row = ann, cluster_cols = FALSE, 
+         annotation_colors = list(device = leg_full))
+
+```
+
+The Capitainer samples show a higher signal between 16 and 18 seconds compared
+to all other samples.
+
+Looking at the chromatogram and gradient, we could filter rt of injection phase
+and reconditioning. Thus, I filtered the data removing everything before 60s and
+after 700 seconds.
+
+NOTE: For rt_filtering I createad lcms1_filtered only for testing. Then I called
+it again lcms1. (memory problem).
+
+```{r bpc-rtfilter}
+#' Filter the data based on retention time
+lcms1 <- filterRt(lcms1, c(60, 700))
+```
+
+```{r bpc-filtered}
+#| fig-cap: "Figure 3. BPC after rt filtering of all samples colored by device."
+#| code-fold: true
+#| code-summary: "Show the code"
+# BPC filtered
+bpc_filtered <- chromatogram(lcms1, aggregationFun = "max")
+#' Plot after filtering
+plot(bpc_filtered, col = paste0(col_sample, 80),
+     main = "BPC after filtering retention time", lwd = 1.5)
+grid()
+legend("topright", col = leg_full,
+       legend = names(leg_full), lty = 1, lwd = 2, horiz = FALSE, bty = "n",
+       cex = 0.9)
+
+```
+
+We can also here compare similarities of the BPCs in a heatmap.
+
+Before plotting the heatmap after rt filtering, I create a new column with the
+same device grouping, but with different blank groups: BLANK_1, BLANK_2,
+BLANK_W, BLANK_M, BLANK_C, BLANK_END.
+
+```{r heatmap1}
+#| fig-cap: "Figure 4. Heatmap of TIC similarities after rt filtering."
+#| code-fold: true
+#| code-summary: "Show the code"
+
+#' Total ion chromatogram
+tic <- chromatogram(lcms1, aggregationFun = "sum") |>
+  bin(binSize = 2)
+
+#' Calculate similarity (Pearson correlation) between BPCs
+ticmap <- do.call(cbind, lapply(tic, intensity)) |>
+  cor()
+
+#' Add sample names as rownames and colnames
+rownames(ticmap) <- colnames(ticmap) <- sampleData(lcms1)$sample_name
+ann <- data.frame(sample_type = sampleData(lcms1)[, "blank_type"])
+rownames(ann) <- rownames(ticmap)
+
+#' Plot heatmap
+pheatmap(ticmap, annotation_col = ann,
+         annotation_colors = list(sample_type = leg_blank_type),
+         show_rownames = FALSE, show_colnames = FALSE)
+```
+
+### Known compounds
+
+Throughout the entire process, it is crucial to have reference points within the
+dataset, such as well-known ions, useful for the visualization of data
+throughout the entire analysis. Most experiments nowadays include internal
+standards (IS). In this case, no standards were spiked, so 12 known compounds
+were selected from the National Phenome Center library. This library was built
+using the same LCMS method and metabolites were annotated using standards
+(<https://github.com/phenomecentre/npc-open-lcms/blob/main/LC-MS%20Metabolite%20Annotations/LPOS_ROI_V_5_1_2.csv>).
+
+-   PC(16:0/18:2)
+-   LPC(0:0/18:2)
+-   PC(18:0/18:2)
+-   Cholesterol
+-   LPC(0:0/16:0)
+-   LPC(18:0/0:0)
+-   LPC(18:1/0:0)
+-   LPC(O-18:0/0:0)
+-   SM(d16:1/16:0)
+-   PC(16:0/20:4)
+-   PC(16:0/16:0)
+-   SM(d18:2/24:0)
+
+We also plot all of them and save the images locally to check manually.
+
+```{r EIC_extract_for_internal_standard1}
+#' get the list
+intern_standard <- read_xlsx("standard_compound_addition.xlsx") |> 
+  as.data.frame()
+intern_standard <- intern_standard[!is.na(intern_standard$POS), ]
+rownames(intern_standard) <- intern_standard$abbreviation
+
+#'generate calcualte formula
+intern_standard$mass <- calculateMass(intern_standard$formula)
+intern_standard$mz <- mapply(intern_standard$mass,
+                             intern_standard$POS,
+                             FUN = mass2mz)
+
+#' Fit for each standards
+intern_standard$mzmin <- intern_standard$mz - 0.02
+intern_standard$mzmax <- intern_standard$mz + 0.02
+intern_standard$rtmin <- intern_standard$RT - 15
+intern_standard$rtmax <- intern_standard$RT + 15
+```
+
+```{r EIC_extract_for_internal_standard2, eval=FALSE}
+#' Extract the EICs
+eics <- chromatogram(lcms1[idx_qc],
+                     mz = as.matrix(intern_standard[, c("mzmin", "mzmax")]),
+                     rt = as.matrix(intern_standard[, c("rtmin", "rtmax")]),
+                     chunkSize = 10)
+
+rownames(fData(eics)) <- intern_standard$abbreviation
+
+dr <- "EIC_IS/full/raw/"
+dir.create(dr, recursive = TRUE, showWarnings = FALSE)
+for (i in seq_len(nrow(intern_standard))) {
+    png(paste0(dr, "EIC_", intern_standard$abbreviation[i], ".png"),
+        width = 12, height = 8, units = "cm", res = 600, pointsize = 4)
+    plot(eics[i, ], main = intern_standard$name[i],
+         col = paste0(col_qc_inj_order, 80))
+    grid()
+    legend("topright", col = leg_qc,
+           legend = names(leg_qc), lty = 1)
+    abline(v = intern_standard$RT[i], col = "red", lty = 3)
+    dev.off()
+}
+```
+
+EICs show good rt reproducibility, but intensity variability between samples,
+not only between groups.
+
+# Data preprocessing
+
+## Chromatographic peak detection
+
+Reuse the parameters determined in the QC file.
+
+```{r run-find-chrompeak-on-entire-dataset, eval=!file.exists("peakdetect_lcms1.RData")}
+#' Using the same settings, but with default snthresh
+param <- CentWaveParam(peakwidth = c(5, 20), ppm = 25, integrate = 2, 
+                       snthresh = 5)
+lcms1 <- findChromPeaks(lcms1, param = param, chunkSize = 10)
+save(lcms1, file = "peakdetect_lcms1.RData")
+```
+
+```{r run-find-chrompeak-on-entire-dataset2, eval=!file.exists("peakdetect_lcms1.RData")}
+#' Update EIC internal standard object
+eics_peakdetect <- chromatogram(lcms1[idx_qc],
+                       rt = as.matrix(intern_standard[, c("rtmin", "rtmax")]),
+                       mz = as.matrix(intern_standard[, c("mzmin", "mzmax")]))
+fData(eics_peakdetect) <- fData(eics)
+
+## plot 
+dr <- "EIC_IS/full/peakdetect/"
+dir.create(dr, recursive = TRUE, showWarnings = FALSE)
+for (i in seq_len(nrow(intern_standard))) {
+    png(paste0(dr, "EIC_", intern_standard$abbreviation[i], ".png"),
+        width = 12, height = 8, units = "cm", res = 600, pointsize = 4)
+    ## assign the sample color to each chromatographic peak
+    col_bg <- leg_qc[chromPeaks(eics_peakdetect[i, ])[, "column"]]
+    plot(eics_peakdetect[i, ], main = intern_standard$name[i],
+         col = paste0(col_qc_inj_order, 80), peakBg = paste0(col_bg, 40))
+    grid()
+    legend("topright", col = leg_qc,
+           legend = names(leg_qc), lty = 1)
+    abline(v = intern_standard$RT[i], col = "red", lty = 3)
+    dev.off()
+}
+```
+
+```{r run-find-chrompeak-on-entire-dataset-2, eval=file.exists("peakdetect_lcms1.RData")}
+load("peakdetect_lcms1.RData")
+```
+
+### Refine identified chromatographic peaks
+
+```{r refine1, eval=!file.exists("refine_identified_lcms1.RData")}
+#' Apply on whole dataset
+param <- MergeNeighboringPeaksParam(expandRt = 7, expandMz = 0.0015,
+                                    minProp = 0.75)
+lcms1 <- refineChromPeaks(lcms1, param = param, chunkSize = 10)
+chromPeakData(lcms1)$merged |>
+                      table()
+save(lcms1, file = "refine_identified_lcms1.RData")
+```
+
+```{r eval=file.exists("refine_identified_lcms1.RData")}
+load("refine_identified_lcms1.RData")
+```
+
+We check the number of identified chromatographic peaks in all samples of a data
+set can help spotting potentially problematic samples. Below we count the number
+of chromatographic peaks per sample and show these numbers in a table.
+
+```{r refine3}
+#| tbl-cap: "Table 2. Samples and number of identified chromatographic peaks."
+#' Count the number of peaks per sample and summarize them in a table.
+data.frame(sample_name = sampleData(lcms1)$sample_name,
+           peak_count = as.integer(table(chromPeaks(lcms1)[, "sample"]))) |>
+    kable(format = "pipe") 
+```
+
+There is a decrease of identified peaks related with injection order.
+
+## Retention time alignment
+
+We do an initial correspondence round on the QC samples. The alignment will be
+based on the features shared in these samples.
+
+```{r rt_alignment_1, eval=!file.exists("align_lcms1.RData")}
+#| fig-cap: "Figure 5. Initial correspondence analysis."
+# Initial correspondence analysis
+param <- PeakDensityParam(sampleGroups = sampleData(lcms1)$device == "QC",
+                          minFraction = 1,
+                          binSize = 0.01, ppm = 10,
+                          bw = 2)
+lcms1 <- groupChromPeaks(lcms1, param = param)
+```
+
+```{r rt_alignment_2, eval=!file.exists("align_lcms1.RData")}
+#' Define parameters of choice
+subset <- which(sampleData(lcms1)$device == "QC")
+param <- PeakGroupsParam(minFraction = 0.9, extraPeaks = 50, span = 0.5,
+                         subsetAdjust = "average",
+                         subset = subset)
+
+#' Perform the alignment
+lcms1 <- adjustRtime(lcms1, param = param)
+```
+
+```{r rt_alignment_plot, eval = FALSE}
+#| fig-cap: Figure 6. Retention time alignment results.
+#| fig-height: 5
+#| fig-width: 10
+#' Visualize alignment results
+plotAdjustedRtime(lcms1, col = paste0(col_sample, 80), peakGroupsPch = 1, cex.lab = 1.2)
+grid()
+legend("topright", col = leg_full,
+       legend = names(leg_full), lty = 1, bty = "n", horiz = TRUE, cex = 0.7)
+```
+
+The differences in retention times are, in particular if compared with the
+retention time width of the identified chromatographic peaks, only very small.
+For the present data set we will thus **not** perform a retention time
+alignment.
+
+```{r rt_alignment_4, eval=!file.exists("align_lcms1.RData")}
+#' Get data before alignment
+lcms1_raw <- dropAdjustedRtime(lcms1)
+
+#' Apply the adjusted retention time to our dataset
+lcms1 <- applyAdjustedRtime(lcms1)
+
+# Save aligment object 
+save(lcms1, file = "align_lcms1.RData")
+```
+
+```{r eval=file.exists("align_lcms1.RData")}
+load("align_lcms1.RData")
+```
+
+```{r rt_alignment_5, eval=FALSE}
+# RUN WITH QCs (idx)
+#' Update EIC internal standard object
+eics_align <- chromatogram(lcms1[idx_qc],
+                       rt = as.matrix(intern_standard[, c("rtmin", "rtmax")]),
+                       mz = as.matrix(intern_standard[, c("mzmin", "mzmax")]))
+fData(eics_align) <- fData(eics)
+
+## plot 
+dr <- "EIC_IS/full/align/"
+dir.create(dr, recursive = TRUE, showWarnings = FALSE)
+for (i in seq_len(nrow(intern_standard))) {
+    png(paste0(dr, "EIC_", intern_standard$abbreviation[i], ".png"),
+        width = 12, height = 8, units = "cm", res = 600, pointsize = 4)
+    plot(eics_align[i, ], main = intern_standard$name[i],
+         col = paste0(col_qc_inj_order, 80))
+    grid()
+    legend("topright", col = leg_full,
+           legend = names(leg_full), lty = 1)
+    abline(v = intern_standard$RT[i], col = "red", lty = 3)
+    dev.off()
+}
+```
+
+```{r rt_alignment_6, eval=FALSE, include=FALSE}
+# Test chromatogram()
+c_test <- chromatogram(lcms1[1L], rt = c(400, 450), mz = c(100, 600)) 
+plot(c_test, peakType = "none") # how to not have the detected peaks?
+```
+
+## Correspondence
+
+As described above, for the present data set we don't need to perform a
+retention time alignment. Thus we load below the data that was saved **before**
+performing the alingnment and proceed the analysis with that data.
+
+```{r eval=file.exists("refine_identified_lcms1.RData")}
+load("refine_identified_lcms1.RData")
+```
+
+```{r correspondence_1, eval=!file.exists("corres_lcms1.RData")}
+pd_new <- read_xlsx("metadata_lcms_rpos.xlsx", sheet = "samples") |>
+  as.data.frame()
+pd_new <- DataFrame(pd_new)
+sampleData(lcms1) <- pd_new
+
+sampleData(lcms1)$device
+sampleData(lcms1)$sex
+
+vec <- c("sex", "device")
+p <- do.call(paste, c(as.list(sampleData(lcms1)[,vec]), sep = "_"))
+p[p %in% c("NA_BLANK", "NA_QC")] <- NA
+f <- factor(p)
+f
+
+#' Define the settings for the param
+param <- PeakDensityParam(sampleGroups = f, ## this groups per devices 
+                          minFraction = 0.75, binSize = 0.01, ppm = 25,
+                          bw = 2)
+
+#' Apply to whole data
+lcms1 <- groupChromPeaks(lcms1, param = param)
+save(lcms1, file = "corres_lcms1.RData")
+nrow(featureDefinitions(lcms1))
+```
+```{r featureDefinitions}
+featureDefinitions(lcms1) |> head()
+```
+
+```{r eval=file.exists("corres_lcms1.RData")}
+load("corres_lcms1.RData")
+```
+
+plot eics:
+
+```{r correspondence_2, eval=FALSE}
+#' Plot again
+eics_dens <- chromatogram(lcms1[idx_qc],
+                       rt = as.matrix(intern_standard[, c("rtmin", "rtmax")]),
+                       mz = as.matrix(intern_standard[, c("mzmin", "mzmax")]),
+                       chunkSize = 10)
+fData(eics_dens) <- fData(eics)
+
+dr <- "EIC_IS/full/density/"
+dir.create(dr, recursive = TRUE, showWarnings = FALSE)
+for (i in seq_len(nrow(intern_standard))) {
+    png(paste0(dr, "EIC_", intern_standard$abbreviation[i], ".png"),
+        width = 12, height = 8, units = "cm", res = 600, pointsize = 4)
+    plotChromPeakDensity(eics_dens[i, ], param = param,
+                         main = intern_standard$name[i],   
+                         col = paste0(col_sample, "80"),
+    peakCol = leg_qc[chromPeaks(eics_dens[i, ])[, "sample"]],
+    peakBg = paste0(col_qc_inj_order[chromPeaks(eics_dens[i, ])[, "sample"]], 20),
+    peakPch = 16)
+    grid()
+    legend("topright", col = leg_qc,
+           legend = names(leg_qc), lty = 1)
+    abline(v = intern_standard$RT[i], col = "red", lty = 3)
+    dev.off()
+}
+```
+
+Another interesting information to look a the the distribution of these features
+along the retention time axis.
+
+```{r correspondence_3}
+#| tbl-cap: "Table 5. Distribution of features along the retention time axis."
+# Bin features per RT slices
+vc <- featureDefinitions(lcms1)$rtmed
+breaks <- seq(0, max(vc, na.rm = TRUE) + 1, length.out = 15) |>
+    round(0)
+cuts <- cut(vc, breaks = breaks, include.lowest = TRUE)
+
+table(cuts) |>
+    kable(format = "pipe")
+```
+
+The results from the correspondence analysis are now stored, along with the
+results from the other preprocessing steps, within our `XcmsExperiment` result
+object.
+
+This data frame provides the average *m/z* and retention time (in columns
+`"mzmed"` and `"rtmed"`) that characterize a LC-MS feature. Column, `"peakidx"`
+contains the indices of all chromatographic peaks that were assigned to that
+feature. The actual abundances for these features, which represent also the
+final preprocessing results, can be extracted with the `featureValues()`
+function:
+
+```{r feature_abundance}
+#'Extract feature abundances
+# featureValues(lcms1, method = "sum") |>
+#    head()
+```
+
+We can note that some features (e.g. F0002) have missing values in some samples.
+This is expected to a certain degree as not in all samples features,
+respectively their ions, need to be present. We will address this in the next
+section.
+
+-   this quick check kinda make sense because we saw that there was less peaks
+    in in the later QCs.
+
+```{r feature_abundance_2}
+nrow(featureDefinitions(lcms1))
+```
+
+## Gap filling
+
+```{r gapfilling1}
+#' Percentage of missing values
+sum(is.na(featureValues(lcms1))) /
+    length(featureValues(lcms1)) * 100
+```
+
+Gap filling: 40%.
+What means the other 60%?
+
+we could find different features between plasma vs blood and between devices.
+(background noise???)
+
+```{r gapfilling2, , eval=!file.exists("gapfilling_lcms1.RData")}
+#' Fill in the missing values in the whole dataset
+lcms1 <- fillChromPeaks(lcms1, param = ChromPeakAreaParam(), chunkSize = 10)
+save(lcms1, file = "gapfilling_lcms1.RData")
+```
+
+```{r eval=file.exists("gapfilling_lcms1.RData")}
+load("gapfilling_lcms1.RData")
+```
+
+```{r gapfilling3}
+#' Percentage of missing values after gap-filling
+sum(is.na(featureValues(lcms1))) /
+    length(featureValues(lcms1)) * 100
+```
+
+The gap-filling rescue up to 2% Missing Value. When we go back to the raw data,
+we rescue intensities that were measures for specific features. If there is no
+intensity, it will no be filled and then we will need to do imputation in PCA.
+
+```{r}
+lcms1_noblanks <- lcms1[sampleData(lcms1)$device!="BLANK", keepFeatures = TRUE]
+```
+
+NOTE: when subsetting lcms1 object: use \[\], do not use coma, add keepFeatures
+= TRUE to avoid removing feature definition.
+
+```{r Detected-vs-filled-signal1}
+#Distribution of data 
+
+# A. DISTRUBTION in ALL SAMPLES. 
+
+#' Get only detected signal in all samples
+vals_detect <- featureValues(lcms1, filled = FALSE)
+#' Get detected and filled-in signal
+vals_filled <- featureValues(lcms1)
+#' Replace detected signal with NA
+vals_filled[!is.na(vals_detect)] <- NA
+#' Identify features with at least one filled peak
+has_filled <- is.na(rowSums(vals_detect))
+#' Calculate row averages for features with missing values
+avg_detect <- rowMeans(vals_detect[has_filled, ], na.rm = TRUE)
+avg_filled <- rowMeans(vals_filled[has_filled, ], na.rm = TRUE)
+#' Plot the values against each other (in log2 scale)
+plot(log2(avg_detect), log2(avg_filled),
+     xlim = range(log2(c(avg_detect, avg_filled)), na.rm = TRUE),
+     ylim = range(log2(c(avg_detect, avg_filled)), na.rm = TRUE),
+     pch = 21, bg = "#00000020", col = "#00000080",  
+     xlab = "log2(avg_detected)"
+     )
+grid()
+abline(0, 1)
+
+```
+
+Detected and gap-filled values are correlated, but for a considerable number of
+features the gap-filled values are lower than the respective data from the
+detected chromatographic peaks. Note however that the plot above was created on
+the full data set, and differences sample composition respectively presence or
+abundance of metabolites and features can be expected.
+
+We next identify the gap-filled features with a more than 8-fold lower
+gap-filled value compared to the detected value. We visually inspect this data
+using a heatmap to potentially identify any relationship between sample groups
+and differences in the gap-filled values.
+
+```{r}
+#' Identify gap-filled features with a log2 difference in abundance being > 3
+#' Note: log2 difference of 2 represents a 2^3 = 8-fold difference in natural scale
+sel <- which((log2(avg_detect) - log2(avg_filled)) > 3)
+
+#' Get the feature values for these
+vals <- featureValues(lcms1)[has_filled, ]
+vals <- vals[sel, ]
+
+colnames(vals) <- sampleData(lcms1)$sample_name
+## Just use BLANK instead of the individual BLANKS
+ann$device[grep("BLANK", ann$device)] <- "BLANK"
+
+pheatmap(log2(vals), annotation_col = ann,
+         annotation_colors = list(device = leg_full),
+         show_rownames = FALSE, show_colnames = FALSE)
+
+```
+
+Not unexpectedly, the gap-filled abundances in blanks are much lower for all the
+selected features. In addition, a clear difference can also be seen for blood
+and plasma samples, and to a lower extend also for Mitra samples. Since these
+differences are consistent for all samples of the same *device* it can be
+assumed that it stems from differences in either sample composition or
+systematic device-specific contamination.
+
+We next evaluate the gap-filling using the QC samples. For these we can assume
+the same sample composition and gap-filled signal should thus be more similar to
+detected signal.
+
+```{r Detected-vs-filled-signal1-qc}
+#Distribution of data 
+
+qc <- lcms1[sampleData(lcms1)$device == "QC", keepFeatures = TRUE]
+
+#' Get only detected signal in all samples
+vals_detect <- featureValues(qc, filled = FALSE)
+#' Get detected and filled-in signal
+vals_filled <- featureValues(qc)
+#' Replace detected signal with NA
+vals_filled[!is.na(vals_detect)] <- NA
+#' Identify features with at least one filled peak
+has_filled <- is.na(rowSums(vals_detect))
+#' Calculate row averages for features with missing values
+avg_detect <- rowMeans(vals_detect[has_filled, ], na.rm = TRUE)
+avg_filled <- rowMeans(vals_filled[has_filled, ], na.rm = TRUE)
+#' Plot the values against each other (in log2 scale)
+plot(log2(avg_detect), log2(avg_filled),
+     xlim = range(log2(c(avg_detect, avg_filled)), na.rm = TRUE),
+     ylim = range(log2(c(avg_detect, avg_filled)), na.rm = TRUE),
+     pch = 21, bg = "#00000020", col = "#00000080",  
+     xlab = "log2(avg_detected)"
+     )
+grid()
+abline(0, 1)
+
+```
+
+The detected (x-axis) and gap-filled (y-axis) values for QC samples are highly
+correlated. Especially for higher abundances, the agreement is very high, while
+for low intensities, as can be expected, differences are higher and trending to
+below the correlation line. Below we, in addition, fit a linear regression line
+to the data and summarize its results
+
+```{r lr}
+#' fit a linear regression line to the data
+l <- lm(log2(avg_filled) ~ log2(avg_detect))
+summary(l)
+```
+
+The slope of the linear fit is close to 1 (1.03) and the intercept is also small
+suggesting that gap filled signal is very close to the detected signal. Also,
+the R squared is over 0.9 reflecting the high correlation of the values.
+
+## Filtering Features: Blank flagging
+
+Now we remove features present mainly in the blank with Blankflag() function
+from xcms package. This can be done in the "XcmsExperiment" or in the
+"SummarizedExperiment" object.
+
+There will be an extra column created in "featureDefinition" or "rowData" called
+"*possible_contaminants*"with a logical value for each feature.
+
+```{r blankflagfilter}
+filter<- BlankFlag(blankIndex = idx_double_blank,
+                   qcIndex = idx_qc,
+)
+lcms1 <- filterFeatures(lcms1, filter)
+
+#number of flagged features : 
+featureDefinitions(lcms1)$possible_contaminants |> sum(na.rm = TRUE)
+```
+
+Blankflag result filter: 4166 features remain. 971 features were flagged. If I
+only select double_blank only 770 features were flagged.
+
+### Ion Map
+
+We will represent the m/z vs the retention time coloring the compounds that have
+been flagged in the blank and that are present in possible_contaminant column.
+
+```{r ion-map}
+ion_map <- ggplot(featureDefinitions(lcms1), aes(x = rtmed, y = mzmed, color = possible_contaminants)) +
+    geom_point() +
+    scale_color_manual(values = c("FALSE" = "black", "TRUE" = "red", "NA" = "grey")) +
+    labs(x = "retention Time (rtmed)", y = "m/z (mzmed)", color = "Possible Contaminants") +
+    theme_minimal(base_size = 10) +
+    theme(panel.border = element_rect(color = "black", fill = NA, size = 0.8))
+grid.arrange(ion_map, ncol = 1, heights = unit(4, "in"),widths = unit(7.5, "in"))
+
+#featureDefinitions(lcms1)$possible_contaminants 
+```
+
+(jo: just repeating that with base R.)
+
+```{r}
+
+fa <- featureArea(lcms1)
+xl <- range(fa[, c("rtmin", "rtmax")])
+
+## BPC
+par(mfrow = c(2, 1), mar = c(0, 4.5, 0.5, 0.5))
+plot(bpc, xlim = xl, main = "", xlab = "", xaxt = "n")
+grid()
+par(mar = c(4.5, 4.5, 0, 0.5))
+## Feature "area"
+## color for features
+feat_border <- rep("#00000040", nrow(fa))
+feat_border[featureDefinitions(lcms1)$possible_contaminants] <- "#ff000040"
+plot(NA, NA, xlim = range(fa[, c("rtmin", "rtmax")]),
+     ylim = range(fa[, c("mzmin", "mzmax")]), xlab = "retention time",
+     ylab = "m/z")
+rect(xleft = fa[, "rtmin"], xright = fa[, "rtmax"],
+     ybottom = fa[, "mzmin"], ytop = fa[, "mzmax"], border = feat_border)
+grid()
+```
+
+Some of the potential contaminant signal can be observed clustered as horizontal
+lines along the full retention time range. These could represent contamination
+with e.g. salts. Also, vertically aligned groups of features are present. These
+could represent multiple ions/adducts of the same compound.
+
+### Noise Comparison
+
+Below we compare the noise signals between devices. We first calculate the
+overall signal in the dataset and then calculate the signal that is in the
+chromatographic peaks detection. We then subtract the two to get the noise
+signal.
+
+```{r Noise_comparison, echo=FALSE}
+# overall signal in the dataset 
+#' - for each file calculate the sum of intensities 
+background  <- spectra(lcms1[!idx_blank_qc]) |>
+    split(fromFile(lcms1[!idx_blank_qc])) |>
+    lapply(tic) |>
+    lapply(sum) |>
+    unlist()
+
+# Overall signal that is in the chromatographic peaks detection 
+detected <- apply(assay(res_sample), 2, function(x) sum(x, na.rm = TRUE))
+ 
+# substract and plot
+names(background) <- names(detected) <- res_sample$device
+noise <- background - detected
+ 
+f <- factor(names(noise), levels = unique(names(noise)))
+group <- split(noise, f)
+ 
+plot(NULL, xlim = c(1, length(group)), ylim = range(unlist(group)), 
+     xaxt = "n", xlab = "Devices", ylab = "Noise", 
+     main = "Noise comparison between Devices")
+for (i in seq_along(group)) {
+  points(rep(i, length(group[[i]])), group[[i]], pch = 19, 
+col = leg_devices[i])
+}
+axis(1, at = seq_along(group), labels = names(group))
+```
+
+
+Plasma shows more background noise than devices.
+
+
+## Preprocessing results
+
+The final results of the LC-MS data preprocessing are stored within the
+`XcmsExperiment` object. As well as the exact preprocessing performed and each
+setting used.
+
+```{r Process-history}
+#' Check first step of the process history
+load("gapfilling_lcms1.RData")
+processHistory(lcms1)[[1]]
+```
+
+```{r extract_SumExp}
+#' Extract results as a SummarizedExperiment
+res <- quantify(lcms1, method = "sum", filled = FALSE)
+res
+```
+
+```{r different_assays_sumExp}
+assays(res)$raw_filled <- featureValues(lcms1, method = "sum",
+                                        filled = TRUE )
+#assays(res[,idx_blank_C])$raw_filled <- featureValues(lcms1, method = "sum",
+                                        filled = TRUE )
+#' Different assay in the SummarizedExperiment object
+assayNames(res)
+
+```
+
+```{r save_preprocessed}
+#' Save the preprocessing results
+#' d <- file.path(tempdir(), "objects/lcms1")
+# saveMsObject(lcms1, AlabasterParam(path = d))
+#' for now let's do R object because the previous method is not implemented yet.
+save(lcms1, file = "preprocessed_lcms1.RData")
+```
+
+# Data Normalization
+
+## Initial quality assesment
+
+PCA: unsupervised visualization. We need to impute first all missing values
+(replaced by random numbers from a uniform distribution from half the smallest
+signal measured for a specific feature to its minimal value).
+
+```{r Impute_MV}
+#' Impute missing values using an uniform distribution
+na_unidis <- function(z) {
+    na <- is.na(z)
+    if (any(na)) {
+        min = min(z, na.rm = TRUE)
+        z[na] <- runif(sum(na), min = min/2, max = min)
+    }
+    z
+}
+
+#' Row-wise impute missing values and add the data as a new assay
+tmp <- apply(assay(res, "raw_filled"), MARGIN = 1, na_unidis)
+assays(res)$raw_filled_imputed <- t(tmp)
+
+```
+
+Before plotting the PCA, we apply a log2 transform, center and scale the data.
+The log2 transformation is applied to stabilize the variance while centering to
+remove dependency on absolute abundances.
+
+```{r PCA_all}
+#| fig-cap: "PCA of all samples colored by device."
+# General PCA: blanks, QCs and devices
+#' Log2 transform and scale data
+
+vals <- assay(res, "raw_filled_imputed") |>
+    log2() |>
+    t() |>
+    scale(center = TRUE, scale = TRUE)
+
+#' Perform the PCA
+pca_res <- prcomp(vals, scale = FALSE, center = FALSE)
+
+#' Plot the results
+vals_st <- cbind(vals, device = res$device)
+pca_12 <- autoplot(pca_res, data = vals_st , colour = 'device', scale = 0) +
+    scale_color_manual(values = leg_full)
+pca_34 <- autoplot(pca_res, data = vals_st, colour = 'device',
+                   x = 3, y = 4, scale = 0) +
+    scale_color_manual(values = leg_full)
+grid.arrange(pca_12, pca_34, ncol = 1)
+```
+
+PCA: Blank separates from the samples. Plasma and Blood separates from devices.
+PC1 represents 51.97% variance and PC2 20.46%. QCs are not as grouped as
+expected.
+
+(autoplot gives automatically colors. No need to define specific colors)
+
+In this line, we are subsetting the res object to do not take into account
+blanks and/or QCs.
+
+i.e. this line should be for xcms exp object:: blank \<-
+res\[sampleData(res)$device == "BLANK", keepFeatures = TRUE]
+    this line should be for summarise exp object:: res_blank <- res_full[, res_full$device
+== "blank"\] keep feature == TRUE: is to avoid that the description of the
+features is removed. Only in xcms experiments.
+
+```{r PCA_indexing}
+# PCA without blank
+
+## Data exploration and comparison
+ 
+### We remove blank and QC samples from the study samples
+
+res_blank <- res[, res$device == "BLANK"] #only blank
+res_QC <- res[, res$sample_type == "QC"] #only QCs
+res_sample <- res[, !res$device %in% c("BLANK", "QC")]  #samples without blanks or QCs
+res_noblank <- res[, !res$device %in% c("BLANK")] #samples without blanks
+ 
+#remove features that only have NA in the study samples
+na_idx <- apply(assay(res, "raw_filled"), MARGIN = 1, function(x) all(is.na(x)))
+res <- res[!na_idx, ]
+
+```
+
+Plot all the PCA to observe the data structure and grouping of the different
+samples.
+
+```{r PCA_samples, fig.height=5, fig.width=10}
+#| echo: false
+#| fig-cap: PCA of all samples without the blank and QCs colored by device.
+#' Log2 transform and scale data
+vals_sample <- assay(res_sample, "raw_filled_imputed") |>
+    log2() |>
+    t() |>
+    scale(center = TRUE, scale = TRUE)
+ 
+#' Perform the PCA
+pca_res_sample <- prcomp(vals_sample, scale = FALSE, center = FALSE)
+ 
+#' Plot the results
+vals_st_sample <- cbind(vals_sample, device = res_sample$device)
+pca_sample_12 <- autoplot(pca_res_sample, data = vals_st_sample , colour = 'device', scale = 0) +
+    scale_color_manual(values = leg_full)
+pca_sample_34 <- autoplot(pca_res_sample, data = vals_st_sample, colour = 'device',
+                   x = 3, y = 4, scale = 0) +
+    scale_color_manual(values = leg_full)
+grid.arrange(pca_sample_12, pca_sample_34, ncol = 2)
+```
+
+```{r PCA_noblank, fig.height=5, fig.width=10}
+#| echo: false
+#| fig-cap: PCA of all samples without blanks colored by device.
+#' Log2 transform and scale data
+vals_noblank <- assay(res_noblank, "raw_filled_imputed") |>
+    log2() |>
+    t() |>
+    scale(center = TRUE, scale = TRUE)
+ 
+#' Perform the PCA
+pca_res_noblank <- prcomp(vals_noblank, scale = FALSE, center = FALSE)
+ 
+#' Plot the results
+vals_st_noblank <- cbind(vals_noblank, device = res_noblank$device)
+pca_noblank_12 <- autoplot(pca_res_noblank, data = vals_st_noblank , colour = 'device', scale = 0) +
+    scale_color_manual(values = leg_full) +
+    theme_minimal()
+pca_noblank_34 <- autoplot(pca_res_noblank , data = vals_st_noblank, colour = 'device',
+                   x = 3, y = 4, scale = 0) +
+    scale_color_manual(values = leg_full) +
+    theme_minimal()
+grid.arrange(pca_noblank_12, pca_noblank_34, ncol = 2)
+```
+
+```{r PCA_inj_index, echo=TRUE, fig.height=5, fig.width=10}
+#' check injection index only samples
+vals_st_sample <- cbind(vals_sample, injection_index = res_sample$injection_index)
+
+pca_sample_injidx_12 <- autoplot(pca_res_sample, data = vals_st_sample, 
+                                 colour = 'injection_index', scale = 0) +
+                                theme_minimal()
+pca_sample_injidx_34 <- autoplot(pca_res_sample, data = vals_st_sample, colour = 'injection_index',
+                   x = 3, y = 4, scale = 0) + 
+                                theme_minimal()
+grid.arrange(pca_sample_injidx_12, pca_sample_injidx_34, ncol = 2)
+
+```
+
+```{r PCA_inj_order_samples_QCs, echo=TRUE, fig.height=5, fig.width=10}
+#' check injection index samples and QCs
+vals_st_noblank <- cbind(vals_noblank, injection_index = res_noblank$injection_index)
+
+pca_noblank_injidx_12 <- autoplot(pca_res_noblank, data = vals_st_noblank, 
+                                  colour = 'injection_index', scale = 0) + 
+                                    theme_minimal()
+pca_noblank_injidx_34 <- autoplot(pca_res_noblank, data = vals_st_noblank, colour = 'injection_index',
+                   x = 3, y = 4, scale = 0) + 
+                    theme_minimal()
+grid.arrange(pca_noblank_injidx_12, pca_noblank_injidx_34, ncol = 2)
+
+```
+
+```{r PCA_inj_order}
+#' Add age to the PCA plot depending on age
+vals_st_age <- cbind(vals_sample, age = res_sample$age)
+pca_sample_age_12 <- autoplot(pca_res_sample, data = vals_st_age , 
+                              colour = 'age', scale = 0) 
+pca_sample_age_12
+
+```
+
+```{r PCA_age, echo=TRUE, fig.height=5, fig.width=10}
+#' Add age to the PCA plot depending on sex
+vals_st_sex <- cbind(vals_sample, sex = res_sample$sex)
+pca_sample_sex_12 <- autoplot(pca_res_sample, data = vals_st_sex , colour = 'sex', scale = 0)
+grid.arrange(pca_sample_sex_12)
+
+```
+
+There is grouping depending on the type of sample. Inside groups it doesn't seem
+to be sex separation between samples.
+
+### Intensity evaluation
+
+```{r Intensity_evaluation_all}
+#| fig-cap: "Figure XX. Number of detected peaks and feature abundances."
+layout(mat = matrix(1:3, ncol = 1), height = c(0.2, 0.2, 0.8))
+par(mar = c(0.2, 4.5, 0.2, 3))
+
+barplot(apply(assay(res, "raw"), MARGIN = 2, function(x) sum(!is.na(x))),
+        col = paste0(col_sample, 80), border = col_sample,
+        ylab = "# detected peaks", xaxt = "n", space = 0.012)
+grid(nx = NA, ny = NULL)
+barplot(apply(assay(res, "raw_filled"), MARGIN = 2, function(x) sum(!is.na(x))),
+        col = paste0(col_sample, 80), border = col_sample,
+        ylab = "# detected + filled peaks", xaxt = "n",
+        space = 0.012)
+grid(nx = NA, ny = NULL)
+vioplot(log2(assay(res, "raw_filled")), xaxt = "n",
+        ylab = expression(log[2]~feature~abundance),
+        col = paste0(col_sample, 80), border = col_sample)
+points(colMedians(log2(assay(res, "raw_filled")), na.rm = TRUE), type = "b",
+       pch = 1)
+grid(nx = NA, ny = NULL)
+legend("topright", col = leg_full,
+       legend = names(leg_full), lty=1, lwd = 2, xpd = TRUE, ncol = 3,
+       cex = 0.8,  bty = "n")
+```
+
+```{r Intensity_evaluation_samples}
+#| fig-cap: "Figure XX. Number of detected peaks and feature abundances (only Samples)."
+layout(mat = matrix(1:3, ncol = 1), height = c(0.2, 0.2, 0.8))
+par(mar = c(0.2, 4.5, 0.2, 3))
+
+barplot(apply(assay(res_sample, "raw"), MARGIN = 2, function(x) sum(!is.na(x))),
+        col = paste0(col_devices, 80), border = col_devices,
+        ylab = "# detected peaks", xaxt = "n", space = 0.012, legend.text = NULL)
+grid(nx = NA, ny = NULL)
+barplot(apply(assay(res_sample, "raw_filled"), MARGIN = 2, function(x) sum(!is.na(x))),
+        col = paste0(col_devices, 80), border = col_devices,
+        ylab = "# detected + filled peaks", xaxt = "n",
+        space = 0.012)
+grid(nx = NA, ny = NULL)
+vioplot(log2(assay(res_sample, "raw_filled")), xaxt = "n",
+        ylab = expression(log[2]~feature~abundance),
+        col = paste0(col_devices, 80), border = col_devices)
+points(colMedians(log2(assay(res_sample, "raw_filled")), na.rm = TRUE), type = "b",
+       pch = 1)
+grid(nx = NA, ny = NULL)
+legend("topright", col = leg_devices,
+       legend = names(leg_devices), lty=1, lwd = 2, xpd = TRUE, ncol = 3,
+       cex = 0.8,  bty = "n")
+```
+
+```{r Intensity_evaluation_samples_QCs}
+#| code-fold: true
+#| code-summary: Show the code
+#| fig-cap: Figure XX. Number of detected peaks and feature abundances (SAMPLES AND QCs).
+layout(mat = matrix(1:3, ncol = 1), height = c(0.2, 0.2, 0.8))
+par(mar = c(0.2, 4.5, 0.2, 3))
+
+barplot(apply(assay(res_noblank, "raw"), 
+    MARGIN = 2, function(x) sum(!is.na(x))),
+        col = paste0(col_noblank, 80), border = col_noblank,
+        ylab = "# detected peaks", xaxt = "n", space = 0.012, legend.text = NULL)
+grid(nx = NA, ny = NULL)
+barplot(apply(assay(res_noblank, "raw_filled"), 
+    MARGIN = 2, function(x) sum(!is.na(x))),
+        col = paste0(col_noblank, 80), border = col_noblank,
+        ylab = "# detected + filled peaks", xaxt = "n",
+        space = 0.012)
+grid(nx = NA, ny = NULL)
+vioplot(log2(assay(res_noblank, "raw_filled")), xaxt = "n",
+        ylab = expression(log[2]~feature~abundance),
+        col = paste0(col_noblank, 80), border = col_noblank)
+points(colMedians(log2(assay(res_noblank, "raw_filled")), na.rm = TRUE), 
+    type = "b",
+       pch = 1)
+grid(nx = NA, ny = NULL)
+legend("topright", col = leg_noblank,
+       legend = names(leg_noblank), lty=1, lwd = 2, xpd = TRUE, ncol = 3,
+       cex = 0.8,  bty = "n")
+```
+
+### CV values
+
+```{r CV_values}
+#' Calculate the CV values
+#index_study <- res$device %in% c("CTR", "CVD")
+index_QC <- res_noblank$device == "QC"
+cv_qc <- rowRsd(assay(res_noblank, "raw_filled")[, index_QC],
+                    na.rm = TRUE, mad = TRUE)
+
+#' Summarize the values across features
+res_df <- quantile(cv_qc, na.rm = TRUE)
+
+kable(res_df, format = "pipe")
+```
+
+### RLA
+
+An RLA value is the abundance of a feature in a sample relative to the median
+abundance of the same feature across multiple samples.
+
+-   Within group RLA plots: assess tightness of replicates within groups should
+    have a median close to zero and low variation around it.
+-   across groups, they allow to compare behavior between groups
+
+```{r RLA-log-abundance-all}
+par(mfrow = c(1, 1), mar = c(3.5, 4.5, 2.5, 1))
+boxplot(MsCoreUtils::rowRla(assay(res, "raw_filled"),
+                            f = res$device, transform = "log2"),
+        cex = 0.5, pch = 16,
+        col = paste0(col_sample, 80), ylab = "RLA",
+        border = col_sample, boxwex = 1,
+        outline = FALSE, xaxt = "n", main = "Relative log abundance",
+        cex.main = 1)
+axis(side = 1, at = seq_len(ncol(res)), labels = colData(res)$sample_name)
+grid(nx = NA, ny = NULL)
+abline(h = 0, lty=3, lwd = 1, col = "black")
+legend("topright", col = leg_full,
+       legend = names(leg_full), lty=1, lwd = 2, xpd = TRUE, ncol = 3,
+       cex = 0.8,  bty = "n")
+
+#change legend for sample_name
+```
+
+```{r RLA-log-abundance-no-blank}
+par(mfrow = c(1, 1), mar = c(3.5, 4.5, 2.5, 1))
+boxplot(MsCoreUtils::rowRla(assay(res_noblank, "raw_filled"),
+                            f = res_noblank$device, transform = "log2"),
+        cex = 0.5, pch = 16,
+        col = paste0(col_noblank, 80), ylab = "RLA",
+        border = col_noblank, boxwex = 1,
+        outline = FALSE, xaxt = "n", main = "Relative log abundance",
+        cex.main = 1)
+axis(side = 1, at = seq_len(ncol(res_noblank)), 
+    labels = colData(res_noblank)$sample_name)
+grid(nx = NA, ny = NULL)
+abline(h = 0, lty=3, lwd = 1, col = "black")
+legend("topright", col = leg_noblank,
+       legend = names(leg_noblank), lty=1, lwd = 2, xpd = TRUE, ncol = 3,
+       cex = 0.8,  bty = "n")
+
+```
+
+On the RLA plot above, we can see that median is not centered around 0 after
+QC07. This can be associated to the sensibility of the instrument and detector
+value optimisation across the analysis (is it worthy to include "autogain" in
+method). Drift correction? Technical issues? also, mainly with Plasma samples
+there is more variability.
+
+
+
+## Between sample normalisation
+
+Between-sample normalization use filled-in features to effectively mitigate
+variations influenced by technical issues, such as differences in sample
+preparation, processing and injection methods. In this instance, we will employ
+a commonly used technique known as median scaling.
+
+### Median Scaling
+
+This method involves computing the median for each sample, followed by
+determining the median of these individual sample medians. This ensures
+consistent median values for each sample throughout the entire data set.
+Maintaining uniformity in the average total metabolite abundance across all
+samples is crucial for effective implementation.
+
+This process aims to establish a shared baseline for the central tendency of
+metabolite abundance, mitigating the impact of sample-specific technical
+variations. This approach fosters a more robust and comparable analysis of the
+top features across the data set. The assumption is that normalizing based on
+the median, known for its lower sensitivity to extreme values, enhances the
+comparability of top features and ensures a consistent average abundance across
+samples.
+
+```{r normalization-factor-all}
+#' Compute median and generate normalization factor
+mdns <- apply(assay(res, "raw_filled"), MARGIN = 2,
+              median, na.rm = TRUE )
+nf_mdn <- mdns / median(mdns)
+
+#' divide dataset by median of median and create a new assay.
+assays(res)$norm <- sweep(assay(res, "raw_filled"), MARGIN = 2, nf_mdn, '/')
+assays(res)$norm_imputed <- sweep(assay(res, "raw_filled_imputed"), MARGIN = 2,
+                                  nf_mdn, '/')
+
+```
+
+```{r normalization-factor-noblank}
+#' Compute median and generate normalization factor (NO BLANKS)
+mdns_noblank <- apply(assay(res_noblank, "raw_filled"), MARGIN = 2,
+              median, na.rm = TRUE )
+nf_mdn_noblank <- mdns_noblank / median(mdns_noblank)
+
+#' divide dataset by median of median and create a new assay.
+assays(res_noblank)$norm <- sweep(assay(res_noblank, "raw_filled"), MARGIN = 2, nf_mdn_noblank, '/')
+assays(res_noblank)$norm_imputed <- sweep(assay(res_noblank, "raw_filled_imputed"), MARGIN = 2,
+                                  nf_mdn_noblank, '/')
+```
+
+### Assessing overall effectiveness of the normalisation approach
+
+#### Principal component analysis
+
+The evaluation will be performed by comparing the distribution of the log2
+transformed feature abundances before and after normalization.
+
+```{r PCA-normalisation, fig.height=7, fig.width=7}
+#| echo: false
+#| fig-cap: PCA after normalization of all samples colored by device.
+
+#' Data before normalisation
+vals_st <- cbind(vals, device = res$device)
+pca_raw <- autoplot(pca_res, data = vals_st,
+                    color = 'device', scale = 0) +
+    scale_color_manual(values = leg_full) +
+    labs (title = "PCA before Normalization", tag = "A") +
+    theme_minimal()
+#' Data after normalization
+vals_norm <- apply(assay(res, "norm"), MARGIN = 1, na_unidis) |>
+    log2() |>
+    scale(center = TRUE, scale = TRUE)
+
+pca_res_norm <- prcomp(vals_norm, scale = FALSE, center = FALSE)
+vals_st_norm <- cbind(vals_norm, device = res$device)
+pca_adj <- autoplot(pca_res_norm, data = vals_st_norm,
+                    color = 'device', scale = 0) +
+    scale_color_manual(values = leg_full) +
+    labs (title = "PCA after Normalization", tag = "B") +
+    theme_minimal()
+grid.arrange(pca_raw, pca_adj, ncol = 1)
+```
+
+Now all devices group together, and PCA2 change (plasma -\> devices, now devices
+-\>plasma).
+
+```{r PCA-normalisation-noblank, fig.height=7, fig.width=7}
+#| echo: false
+#| fig-cap: PCA after normalization of all samples without blanks colored by device.
+
+#' Data without blanks before normalisation
+vals_noblank_st<- cbind(vals_noblank, device = res_noblank$device)
+pca_noblank_raw <- autoplot(pca_res_noblank, data = vals_noblank_st,
+                    color = 'device', scale = 0) +
+    scale_color_manual(values = leg_full) + 
+    labs (title = "PCA before Normalization (no blank)", tag = "A") +
+    theme_minimal()
+
+#' Data without blanks after normalization
+vals_noblank_norm <- apply(assay(res_noblank, "norm"), MARGIN = 1, na_unidis) |>
+    log2() |>
+    scale(center = TRUE, scale = TRUE)
+pca_res_noblank_norm <- prcomp(vals_noblank_norm, scale = FALSE, 
+                               center = FALSE)
+
+
+vals_noblank_st_norm <- cbind(vals_noblank_norm, device = res_noblank$device)
+pca_noblank_adj <- autoplot(pca_res_noblank_norm, data = vals_noblank_st_norm,
+                    color = 'device', scale = 0) +
+    scale_color_manual(values = leg_full) +
+    labs (title = "PCA after Normalization (no blank)", tag = "B") +
+    theme_minimal()
+
+grid.arrange(pca_noblank_raw, pca_noblank_adj, ncol = 1)
+```
+
+Normalisation have an impact in PC1 improving the grouping of QCs, Plasma and
+Blood samples.
+
+#### Intensity Evaluation (RLA)
+
+```{r RLA-after-norm, fig.height=7, fig.width=7}
+#| fig.cap = "RLA before and after normalisation"
+
+layout(mat = matrix(1:2, ncol = 1), height = c(0.9,0.9))
+
+par(mfrow = c(2, 1), mar = c(2, 4.5, 2.5, 1))
+# A RLA Raw data
+boxplot(rowRla(assay(res_noblank, "raw_filled"), group = res_noblank$device),
+        cex = 0.5, pch = 16, ylab = "RLA", border = leg_noblank,
+        col = paste0(leg_noblank, 80), cex.main = 1, outline = FALSE,
+        xaxt = "n", main = "Raw data", boxwex = 1)
+grid()
+abline(h = 0, lty = 3, lwd = 1, col = "black")
+legend("topright", col = leg_noblank,
+       legend = names(leg_noblank), lty=1, lwd = 2, xpd = TRUE, ncol = 3,
+       cex = 0.6,  bty = "n")
+
+# B RLA Normalised data
+boxplot(rowRla(assay(res_noblank, "norm"), group = res_noblank$device),
+        cex = 0.5, pch = 16, ylab = "RLA", border = leg_noblank,
+        col = paste0(leg_noblank, 80), boxwex = 1, outline = FALSE,
+        xaxt = "n", main = "Normalised data", cex.main = 1)
+
+#axis(side = 1, at = seq_len(ncol(res_noblank)), labels = res_noblank$sample_name)
+
+grid()
+abline(h = 0, lty = 3, lwd = 1, col = "black")
+legend("topright", col = leg_noblank,
+       legend = names(leg_noblank), lty=1, lwd = 2, xpd = TRUE, ncol = 3,
+       cex = 0.6,  bty = "n")
+
+
+```
+
+NOTE: the colors of this plots are not corrected. Need to fix it. 1st samples
+should be yellow (QC). METABONAUT: typo normalized title. NOTE: fix legend and
+colors in RLA plot
+
+#### CV after normalisation
+
+```{r CV-after-norm}
+#' Calculate the CV values
+index_samples <- res_noblank$device %in% c("WHATMAN", "MITRA", "CAPITAINER", "PLASMA", "BLOOD")
+index_QC <- res_noblank$device == "QC"
+
+sample_res <- cbind(
+    QC_raw = rowRsd(assay(res_noblank, "raw_filled")[, index_QC],
+                    na.rm = TRUE, mad = TRUE),
+    QC_norm = rowRsd(assay(res_noblank, "norm")[, index_QC],
+                     na.rm = TRUE, mad = TRUE),
+    Study_raw = rowRsd(assay(res_noblank, "raw_filled")[, index_samples],
+                       na.rm = TRUE, mad = TRUE),
+    Study_norm = rowRsd(assay(res_noblank, "norm")[, index_samples],
+                        na.rm = TRUE, mad = TRUE)
+)
+
+#' Summarize the values across features
+res_noblank_df <- data.frame(
+    QC_raw = quantile(sample_res[, "QC_raw"], na.rm = TRUE),
+    QC_norm = quantile(sample_res[, "QC_norm"], na.rm = TRUE),
+    Study_raw = quantile(sample_res[, "Study_raw"], na.rm = TRUE),
+    Study_norm = quantile(sample_res[, "Study_norm"], na.rm = TRUE)
+)
+
+kable(res_noblank_df, format = "pipe")
+```
+
+```{r}
+#density plot: evaluation de normalisation. 
+
+dens <- apply(sample_res, 2, density)
+
+plot(NA, xlim=range(sapply(dens, "[", "x")), ylim=range(sapply(dens, "[", "y")))
+mapply(lines, dens, col=1:length(dens))
+
+legend("topright", legend=names(dens), fill=1:length(dens))
+
+```
+
+CV afer normalisation in QCs decrease (0.28 to 0.16 at 75%), but in samples from
+dataset it stays without variation (0.69 to 0.67 at 75%).
+
+### Density Plots with the distribution of CV in the whole dataset. 
+
+```{r}
+# Libraries
+library(ggplot2)
+library(hrbrthemes)
+library(dplyr)
+library(tidyr)
+library(viridis)
+
+# The diamonds dataset is natively available with R.
+
+# Without transparency (left)
+p1 <- ggplot(data=diamonds, aes(x=price, group=cut, fill=cut)) +
+    geom_density(adjust=1.5) +
+    theme_ipsum()
+#p1
+
+# With transparency (right)
+p2 <- ggplot(data=diamonds, aes(x=price, group=cut, fill=cut)) +
+    geom_density(adjust=1.5, alpha=.4) +
+    theme_ipsum()
+#p2
+```
+
+
