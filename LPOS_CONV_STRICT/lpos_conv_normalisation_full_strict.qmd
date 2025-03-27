@@ -1,0 +1,965 @@
+---
+title: "Data analysis of Pilot Study from Imperial - Full data."
+format: html
+tbl-cap-location: bottom
+editor: visual
+date: 'Compiled: `r format(Sys.Date(), "%B %d, %Y")`'
+author: Philippine Louail, Ana Sanchez Lorenzo
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+library(quarto)
+knitr::opts_knit$set(root.dir = './')
+```
+
+# Loading packages
+
+```{r packages-used, message=FALSE, warning=FALSE}
+#| code-fold: true
+#| code-summary: "Show the code"
+## General bioconductor package
+library(BiocStyle)
+library(BiocParallel)
+library(knitr)
+
+## Data Import and handling
+library(readxl)
+library(MsExperiment)
+library(SummarizedExperiment)
+
+## Preprocessing of LC-MS data
+library(xcms)
+library(Spectra)
+library(MetaboCoreUtils)
+
+## Statistical analysis
+library(limma) # Differential abundance
+library(matrixStats) # Summaries over matrices
+
+## Visualisation
+library(pander)
+library(RColorBrewer)
+library(pheatmap)
+library(vioplot)
+library(ggfortify)   # Plot PCA
+library(gridExtra)   # To arrange multiple ggplots into single plots
+library(grid)
+library(UpSetR)
+
+## Annotation
+library(AnnotationHub) # Annotation resources
+library(CompoundDb)    # Access small compound annotation data.
+library(MetaboAnnotation) # Functionality for metabolite annotation.
+```
+# DATA ORGANISATION
+
+## Data import
+
+```{r import, message=FALSE}
+# Data import
+load("preprocessed_lcms1.RData")
+load("res.RData")
+featureDefinitions(lcms1) |>head()
+```
+
+
+```{r indexing, message=FALSE}
+# Index per sample group
+idx_qc <- sampleData(lcms1)$device == "QC"
+idx_blank <- sampleData(lcms1)$device == "BLANK"
+idx_blank_qc <- sampleData(lcms1)$device %in% c("QC","BLANK")
+idx_blank_BuS <- sampleData(lcms1)$blank_type %in% c("BLANK_W", "BLANK_M", "BLANK_C")
+idx_samples <- sampleData(lcms1)$device %in% c("WHATMAN", "MITRA", "CAPITAINER", "PLASMA", "BLOOD")
+idx_bl_sp <- sampleData(lcms1)$blank_type %in% c("BLANK_W", "BLANK_C", "BLANK_M")
+```
+
+```{r par-process}
+#' Set up parallel processing using 3 cores
+if (.Platform$OS.type == "unix") {
+  register(MulticoreParam(4)) ### chunksize has to be be the same number. 
+ } else {
+     register(SnowParam(4))
+}
+```
+
+## Define colors
+
+We will define colors for each of the sample groups based on their sample group
+using the *RColorBrewer* package:
+
+```{r define-colors}
+#| echo: true
+#' Define colors for full dataset
+leg_full <- brewer.pal(12, name = "Set3")[c(1, 12, 7, 5, 10, 4, 6)]
+names(leg_full) <- unique(sampleData(lcms1)$device)
+leg_full["QC"] <- "#f00e0e"
+col_sample <- leg_full[sampleData(lcms1)$device]
+
+#' define colors for devices only
+leg_blank_BuS <- leg_full[-c(1, 2, 6, 7)]
+col_blank_BuS <- leg_blank_BuS[sampleData(lcms1[!idx_blank_BuS])$device]
+leg_blank_BuS <- leg_blank_BuS[c("WHATMAN", "MITRA", "CAPITAINER")]
+```
+
+##Participants column addition
+For Differential abundance analysis we need to specify participants. For that we need to add a new column from sample_name column information in lcms1 object and res object.
+
+```{r}
+#' Create a new column with participants names without device specification.
+sampleData(lcms1)$participants <- substr(sampleData(lcms1)$sample_name, 1, nchar(sampleData(lcms1)$sample_name) -1)
+sampleData(lcms1)$participants[idx_blank_qc] <- NA_character_
+colData(res)$participants <- substr(colData(res)$sample_name, 1, nchar(colData(res)$sample_name) - 1)
+colData(res)$participants[idx_blank_qc] <- NA_character_
+```
+
+# DATA NORMALISATION
+
+## Initial quality assesment
+
+PCA: unsupervised visualization. We need to impute first all missing values
+(replaced by random numbers from a uniform distribution from half the smallest
+signal measured for a specific feature to its minimal value).
+
+```{r Impute_MV}
+#' Impute missing values using an uniform distribution
+na_unidis <- function(z) {
+    na <- is.na(z)
+    if (any(na)) {
+        min = min(z, na.rm = TRUE)
+        z[na] <- runif(sum(na), min = min/2, max = min)
+    }
+    z
+}
+
+#' Row-wise impute missing values and add the data as a new assay
+tmp <- apply(assay(res, "raw_filled"), MARGIN = 1, na_unidis)
+assays(res)$raw_filled_imputed <- t(tmp)
+```
+
+Before plotting the PCA, we apply a log2 transform, center and scale the data.
+The log2 transformation is applied to stabilize the variance while centering to
+remove dependency on absolute abundances.
+
+In this line, we are subsetting the res object to do not take into account
+blanks and/or QCs.
+
+i.e. this line should be for xcms exp object:: blank \<-
+res\[sampleData(res)$device == "BLANK", keepFeatures = TRUE]
+    this line should be for summarise exp object:: res_blank <- res_full[, res_full$device
+== "blank"\] keep feature == TRUE: is to avoid that the description of the
+features is removed. Only in xcms experiments.
+
+### subset sumExp
+
+```{r PCA_indexing}
+# PCA without blank
+## Data exploration and comparison
+### We remove blank and QC samples from the study samples
+
+res_blank <- res[, res$device == "BLANK"] #only blank
+res <- res[,!idx_blank]
+ 
+#remove features that only have NA in the study samples
+na_idx <- apply(assay(res, "raw_filled"), MARGIN = 1, function(x) all(is.na(x)))
+res <- res[!na_idx, ]
+
+## redefine color
+leg_full <- brewer.pal(12, name = "Set3")[c(12, 7, 5, 10, 4, 6)]
+names(leg_full) <- unique(res$device)
+leg_full["QC"] <- "#f00e0e"
+col_sample <- leg_full[res$device]
+```
+
+Plot all the PCA to observe the data structure and grouping of the different
+samples.
+
+```{r PCA_noblank, fig.height=5, fig.width=10}
+#| echo: false
+#| fig-cap: "PCA of all samples without blanks colored by device"
+#' Log2 transform and scale data
+vals <- assay(res, "raw_filled_imputed") |>
+    log2() |>
+    t() |>
+    scale(center = TRUE, scale = TRUE)
+ 
+#' Perform the PCA
+pca_res <- prcomp(vals, scale = FALSE, center = FALSE)
+ 
+#' Plot the results
+vals_st <- cbind(vals, device = res$device)
+pca_12 <- autoplot(pca_res, data = vals_st , colour = 'device', scale = 0) +
+    scale_color_manual(values = leg_full) +
+    theme_minimal()
+pca_34 <- autoplot(pca_res , data = vals_st, colour = 'device',
+                   x = 3, y = 4, scale = 0) +
+    scale_color_manual(values = leg_full) +
+    theme_minimal()
+grid.arrange(pca_12, pca_34, ncol = 2)
+```
+
+
+```{r PCA_inj_order_samples_QCs, echo=TRUE, fig.height=5, fig.width=10}
+#' check injection index samples and QCs
+vals_st <- cbind(vals, injection_index = res$injection_index)
+
+pca_injidx_12 <- autoplot(pca_res, data = vals_st, 
+                                  colour = 'injection_index', scale = 0) + 
+                                    theme_minimal()
+pca_injidx_34 <- autoplot(pca_res, data = vals_st, colour = 'injection_index',
+                   x = 3, y = 4, scale = 0) + 
+                    theme_minimal()
+grid.arrange(pca_injidx_12, pca_injidx_34, ncol = 2)
+
+```
+
+### Intensity evaluation
+
+check. 
+after changes res object, recreate the colors based on the groups. 
+
+```{r Intensity_evaluation_all}
+#| fig-cap: "Figure XX. Number of detected peaks and feature abundances."
+layout(mat = matrix(1:3, ncol = 1), height = c(0.2, 0.2, 0.8))
+par(mar = c(0.2, 4.5, 0.2, 3))
+
+barplot(apply(assay(res, "raw"), MARGIN = 2, function(x) sum(!is.na(x))),
+        col = paste0(col_sample, 80), border = col_sample,
+        ylab = "# detected peaks", xaxt = "n", space = 0.012)
+grid(nx = NA, ny = NULL)
+barplot(apply(assay(res, "raw_filled"), MARGIN = 2, function(x) sum(!is.na(x))),
+        col = paste0(col_sample, 80), border = col_sample,
+        ylab = "# detected + filled peaks", xaxt = "n",
+        space = 0.012)
+grid(nx = NA, ny = NULL)
+vioplot(log2(assay(res, "raw_filled")), xaxt = "n",
+        ylab = expression(log[2]~feature~abundance),
+        col = paste0(col_sample, 80), border = col_sample)
+points(colMedians(log2(assay(res, "raw_filled")), na.rm = TRUE), type = "b",
+       pch = 1)
+grid(nx = NA, ny = NULL)
+legend("topright", col = leg_full,
+       legend = names(leg_full), lty=1, lwd = 2, xpd = TRUE, ncol = 3,
+       cex = 0.8,  bty = "n")
+```
+
+
+```{r Intensity_evaluation_samples_QCs}
+#| code-fold: true
+#| code-summary: Show the code
+#| fig-cap: Figure XX. Number of detected peaks and feature abundances (SAMPLES AND QCs).
+layout(mat = matrix(1:3, ncol = 1), height = c(0.2, 0.2, 0.8))
+par(mar = c(0.2, 4.5, 0.2, 3))
+
+barplot(apply(assay(res, "raw"), 
+    MARGIN = 2, function(x) sum(!is.na(x))),
+        col = paste0(col_sample, 80), border = col_sample,
+        ylab = "# detected peaks", xaxt = "n", space = 0.012, legend.text = NULL)
+grid(nx = NA, ny = NULL)
+barplot(apply(assay(res, "raw_filled"), 
+    MARGIN = 2, function(x) sum(!is.na(x))),
+        col = paste0(col_sample, 80), border = col_sample,
+        ylab = "# detected + filled peaks", xaxt = "n",
+        space = 0.012)
+grid(nx = NA, ny = NULL)
+vioplot(log2(assay(res, "raw_filled")), xaxt = "n",
+        ylab = expression(log[2]~feature~abundance),
+        col = paste0(col_sample, 80), border = col_sample)
+points(colMedians(log2(assay(res, "raw_filled")), na.rm = TRUE), 
+    type = "b",
+       pch = 1)
+grid(nx = NA, ny = NULL)
+legend("topright", col = leg_full,
+       legend = names(leg_full), lty=1, lwd = 2, xpd = TRUE, ncol = 3,
+       cex = 0.8,  bty = "n")
+```
+
+### CV values
+
+```{r CV_values}
+#' Calculate the CV values
+#index_study <- res$device %in% c("CTR", "CVD")
+index_QC <- res$device == "QC"
+cv_qc <- rowRsd(assay(res, "raw_filled")[, index_QC],
+                    na.rm = TRUE, mad = TRUE)
+
+#' Summarize the values across features
+res_df <- quantile(cv_qc, na.rm = TRUE)
+
+kable(res_df, format = "pipe")
+```
+
+### RLA
+
+An RLA value is the abundance of a feature in a sample relative to the median
+abundance of the same feature across multiple samples.
+
+-   Within group RLA plots: assess tightness of replicates within groups should
+    have a median close to zero and low variation around it.
+-   across groups, they allow to compare behavior between groups
+
+```{r RLA-log-abundance-no-blank}
+par(mfrow = c(1, 1), mar = c(3.5, 4.5, 2.5, 1))
+boxplot(MsCoreUtils::rowRla(assay(res, "raw_filled"),
+                            f = res$device, transform = "log2"),
+        cex = 0.5, pch = 16,
+        col = paste0(col_sample, 80), ylab = "RLA",
+        border = col_sample, boxwex = 1,
+        outline = FALSE, xaxt = "n", main = "Relative log abundance",
+        cex.main = 1)
+axis(side = 1, at = seq_len(ncol(res)), 
+    labels = colData(res)$sample_name)
+grid(nx = NA, ny = NULL)
+abline(h = 0, lty=3, lwd = 1, col = "black")
+legend("topright", col = leg_full,
+       legend = names(leg_full), lty=1, lwd = 2, xpd = TRUE, ncol = 3,
+       cex = 0.8,  bty = "n")
+
+```
+
+On the RLA plot above, we can see that median is not centered around 0 after
+QC07. This can be associated to the sensibility of the instrument and detector
+value optimisation across the analysis (is it worthy to include "autogain" in
+method? Technical issues?) Also, mainly with Plasma samples
+there is more variability.
+
+## Between sample normalisation
+
+Between-sample normalization use filled-in features to effectively mitigate
+variations influenced by technical issues, such as differences in sample
+preparation, processing and injection methods. In this instance, we will employ
+a commonly used technique known as median scaling.
+
+### Median Scaling
+
+This method involves computing the median for each sample, followed by
+determining the median of these individual sample medians. This ensures
+consistent median values for each sample throughout the entire data set.
+Maintaining uniformity in the average total metabolite abundance across all
+samples is crucial for effective implementation.
+
+This process aims to establish a shared baseline for the central tendency of
+metabolite abundance, mitigating the impact of sample-specific technical
+variations. This approach fosters a more robust and comparable analysis of the
+top features across the data set. The assumption is that normalizing based on
+the median, known for its lower sensitivity to extreme values, enhances the
+comparability of top features and ensures a consistent average abundance across
+samples.
+
+```{r normalization-factor-all}
+#' Compute median and generate normalization factor
+mdns <- apply(assay(res, "raw_filled"), MARGIN = 2,
+              median, na.rm = TRUE )
+nf_mdn <- mdns / median(mdns)
+
+#' divide dataset by median of median and create a new assay.
+assays(res)$norm <- sweep(assay(res, "raw_filled"), MARGIN = 2, nf_mdn, '/')
+assays(res)$norm_imputed <- sweep(assay(res, "raw_filled_imputed"), MARGIN = 2,
+                                  nf_mdn, '/')
+
+```
+
+## Assessing overall effectiveness of the normalisation approach
+
+### Principal component analysis
+
+The evaluation will be performed by comparing the distribution of the log2
+transformed feature abundances before and after normalization.
+
+```{r PCA-normalisation, fig.height=7, fig.width=7}
+#| echo: false
+#| fig-cap: PCA after normalization of all samples colored by device.
+
+#' General PCA: blanks, QCs and devices
+#' Log2 transform and scale data
+vals <- assay(res, "raw_filled_imputed") |>
+    log2() |>
+    t() |>
+    scale(center = TRUE, scale = TRUE)
+
+#' Perform the PCA
+pca_res <- prcomp(vals, scale = FALSE, center = FALSE)
+
+#' Data before normalisation
+vals_st <- cbind(vals, device = res$device)
+pca_raw <- autoplot(pca_res, data = vals_st,
+                    color = 'device', scale = 0) +
+    scale_color_manual(values = leg_full) +
+    labs (title = "PCA before Normalization", tag = "A") +
+    theme_minimal()
+#' Data after normalization
+vals_norm <- apply(assay(res, "norm"), MARGIN = 1, na_unidis) |>
+    log2() |>
+    scale(center = TRUE, scale = TRUE)
+
+pca_res_norm <- prcomp(vals_norm, scale = FALSE, center = FALSE)
+vals_st_norm <- cbind(vals_norm, device = res$device)
+pca_adj <- autoplot(pca_res_norm, data = vals_st_norm,
+                    color = 'device', scale = 0) +
+    scale_color_manual(values = leg_full) +
+    labs (title = "PCA after Normalization", tag = "B") +
+    theme_minimal()
+grid.arrange(pca_raw, pca_adj, ncol = 1)
+```
+Normalisation have an impact in PC1 improving the grouping of QCs, Plasma and
+Blood samples. Devices are group together and look quite similar. Capitainer could be more similar to blood and mitra more similar to plasma but it is important to do a quantitative analysis to determine it. 
+
+
+### Intensity Evaluation (RLA)
+
+Relative log abundance plots (RLA) are useful to compare differences in abundance between samples. RLA value is the abundance per feature per sample relative to the median abundance of the same feature across different samples. 
+
+
+```{r RLA-after-norm2, fig.height=7, fig.width=7}
+#| fig.cap = "RLA before and after normalisation"
+
+layout(mat = matrix(1:2, ncol = 1), height = c(0.9,0.9))
+
+par(mfrow = c(2, 1), mar = c(2, 4.5, 2.5, 1))
+# A RLA Raw data
+boxplot(rowRla(assay(res, "raw_filled"), group = res$device),
+        cex = 0.5, pch = 16, ylab = "RLA", border = leg_full,
+        col = paste0(leg_full, 80), cex.main = 1, outline = FALSE,
+        xaxt = "n", main = "Non-normalised data", boxwex = 1)
+grid()
+abline(h = 0, lty = 3, lwd = 1, col = "black")
+legend("topright", col = leg_full,
+       legend = names(leg_full), lty=1, lwd = 2, xpd = TRUE, ncol = 3,
+       cex = 0.6,  bty = "n")
+
+# B RLA Normalised data
+boxplot(rowRla(assay(res, "norm"), group = res$device),
+        cex = 0.5, pch = 16, ylab = "RLA", border = leg_full,
+        col = paste0(leg_full, 80), boxwex = 1, outline = FALSE,
+        xaxt = "n", main = "Normalised data", cex.main = 1)
+
+
+grid()
+abline(h = 0, lty = 3, lwd = 1, col = "black")
+legend("topright", col = leg_full,
+       legend = names(leg_full), lty=1, lwd = 2, xpd = TRUE, ncol = 3,
+       cex = 0.6,  bty = "n")
+
+
+```
+After normalization, relative log abundance plot shows that all QCs abundance have been centered around the median. This make the medians of each sample close to zero. 
+
+Just plot colored QCs for better visualisation. 
+
+```{r RLA-after-norm1, fig.height=7, fig.width=7}
+#| fig.cap = "RLA before and after normalisation"
+
+colors <- ifelse(res$device == "QC", "#f00e0e", "grey")
+
+layout(mat = matrix(1:2, ncol = 1), height = c(0.9,0.9))
+
+par(mfrow = c(2, 1), mar = c(2, 4.5, 2.5, 1))
+# A RLA Raw data
+boxplot(rowRla(assay(res, "raw_filled"), group = res$device),
+        cex = 0.5, pch = 16, ylab = "RLA", border = colors,
+        col = paste0(colors, 80), cex.main = 1, outline = FALSE,
+        xaxt = "n", main = "Non-normalised data", boxwex = 1)
+grid()
+abline(h = 0, lty = 3, lwd = 1, col = "black")
+legend("topright", col = colors,
+       legend = names(leg_full), lty=1, lwd = 2, xpd = TRUE, ncol = 3,
+       cex = 0.6,  bty = "n")
+
+# B RLA Normalised data
+boxplot(rowRla(assay(res, "norm"), group = res$device),
+        cex = 0.5, pch = 16, ylab = "RLA", border = colors,
+        col = paste0(colors, 80), boxwex = 1, outline = FALSE,
+        xaxt = "n", main = "Normalised data", cex.main = 1)
+
+grid()
+abline(h = 0, lty = 3, lwd = 1, col = "black")
+legend("topright", col = colors,
+       legend = names(leg_full), lty=1, lwd = 2, xpd = TRUE, ncol = 3,
+       cex = 0.6,  bty = "n")
+
+
+```
+note check axes same. x axis inj order lab
+### CV after normalisation
+
+```{r CV-after-norm}
+#' Calculate the CV values
+index_samples <- res$device %in% c("WHATMAN", "MITRA", "CAPITAINER", "PLASMA", "BLOOD")
+index_QC <- res$device == "QC"
+
+sample_res <- cbind(
+    QC_raw = rowRsd(assay(res, "raw_filled")[, index_QC],
+                    na.rm = TRUE, mad = TRUE),
+    QC_norm = rowRsd(assay(res, "norm")[, index_QC],
+                     na.rm = TRUE, mad = TRUE),
+    Study_raw = rowRsd(assay(res, "raw_filled")[, index_samples],
+                       na.rm = TRUE, mad = TRUE),
+    Study_norm = rowRsd(assay(res, "norm")[, index_samples],
+                        na.rm = TRUE, mad = TRUE)
+)
+
+#' Summarize the values across features
+res_df <- data.frame(
+    QC_raw = quantile(sample_res[, "QC_raw"], na.rm = TRUE),
+    QC_norm = quantile(sample_res[, "QC_norm"], na.rm = TRUE),
+    Study_raw = quantile(sample_res[, "Study_raw"], na.rm = TRUE),
+    Study_norm = quantile(sample_res[, "Study_norm"], na.rm = TRUE)
+)
+
+kable(res_df, format = "pipe")
+```
+
+#### Density Plots with the distribution of CV in the whole dataset.
+```{r densityplot-all}
+## Density Plot to evaluation normsalisation evaluation
+dens <- apply(sample_res, 2, density)
+# Calculate the density estimates in the CV values and subset it only for the QCs
+
+# Create density plots
+
+plot_density_full <- plot(NA, xlim=range(sapply(dens, "[", "x")), ylim=range(sapply(dens, "[", "y")),
+     xlab = "CV Values", ylab = "Density", main = "Density Plot for Normalisation Evaluation")
+
+    # Define a color palette with transparency
+    cols <- rainbow(length(dens))  # You can use any color palette you prefer
+    alpha <- 0.6  # Set the transparency level (0 is fully transparent, 1 is fully opaque)
+    transparent_cols <- sapply(cols, function(col) rgb(t(col2rgb(col)) / 255, alpha = alpha))
+
+    # Plot each density with a different color and transparency
+    mapply(function(density, col) {
+    polygon(density, col = col, border = NA)
+    }, dens, col = transparent_cols)
+    
+    # Add a legend to the plot
+    legend("topright", legend = names(dens), fill = transparent_cols, title = "Variables")
+```
+
+```{r densityplot-qc}
+# Subset dens to include only QC_raw and QC_norm
+
+dens_subset <- dens[c("QC_raw", "QC_norm")]
+
+# Plot setup
+plot(NA, xlim=range(sapply(dens_subset, "[", "x")), ylim=range(sapply(dens_subset, "[", "y")),
+     xlab = "Value", ylab = "Density", main = "Density Plot for Normalisation Evaluation", xaxt = "n")
+
+# Define specific colors with transparency for the subset
+colors <- c("QC_raw" = "red", "QC_norm" = "green")
+alpha <- 0.6  # Set the transparency level (0 is fully transparent, 1 is fully opaque)
+transparent_cols_subset <- sapply(colors, function(col) rgb(t(col2rgb(col)) / 255, alpha = alpha))
+
+# Plot each density in the subset with the specified color and transparency
+mapply(function(density, col) {
+  polygon(density, col = col, border = NA)
+}, dens_subset, col = transparent_cols_subset)
+
+# Add a vertical line at x = 0.3, red and dashed
+abline(v = 0.3, col = "red", lty = 2)
+
+# Add custom x-axis with values from 0 to 1.5 every 0.1
+axis(1, at = seq(0, 1.5, by = 0.1), labels = seq(0, 1.5, by = 0.1))
+
+# Add a legend to the plot for the subset
+legend("topright", legend = names(dens_subset), fill = transparent_cols_subset)
+
+```
+
+CV afer normalisation in QCs decrease (0.28 to 0.16 at 75% of features), but in samples from dataset it stays without variation (0.69 to 0.67 at 75% of features). This means technical variation is removed but we still see biological variation. 
+
+# FILTERS:
+## BlankFlag features filtering
+
+After the normalization, I removed all possible contaminants from the blank to avoid including features in the qualitative analysis. In this case, the 'possible_contaminant' column has NA values which need to be transformed in FALSE based. 
+
+```{r blankflag-filter}
+# Keep an original object
+res_orig <- res
+nrow(res_orig)
+# fix for NA presence in column.
+rowData(res)$possible_contaminants[is.na(rowData(res)$possible_contaminants)] <- FALSE
+# subsetting res removing possible contaminants from blank. 
+
+## FROM NOW ON NROWs is different. 
+res <- res[!rowData(res)$possible_contaminants,]
+nrow(res)
+#Percentage of features removed
+nrow(res)/nrow(res_orig) * 100
+```
+Number of possible_contaminats removed: 338
+Number features remaining 2564
+Percentage remain features : 88% 
+
+## Filter RSD  filter:  
+The DratioFilter function enable the filtering of features based of the 
+"dispersion ratio" (D-ratio)??? RSD, defined as the st. dev of QC samples divided by 
+st deviation for biological samples, for each feature. 
+
+```{r}
+# Keep unfiltered object
+res_unfilt <- res
+```
+Total number of features in raw data: 'r nrow(assay(res_unfilt))'. 
+
+```{r Dratio-filter}
+#' Compute and filter based on the RsdFilter
+filter_Rsd <- RsdFilter(threshold = 0.3,
+                        qcIndex = res$device == "QC",
+                        mad = FALSE)
+res <- filterFeatures(res, filter = filter_Rsd, assay = "norm_imputed")
+
+```
+```{r}
+#' Number of features after analysis
+nrow(res)
+#' Percentage left: end/beginning
+nrow(res)/nrow(res_orig) * 100
+```
+
+*RsdFilter*: enables features filtering based on relative standard deviation 
+(RSD or CV) for a specified threshold. In this case, features with CV > 30% will 
+be removed, as it is te upper limit accepted for biomarker discovery in 
+conventional bioanalysis (doi:10.1038/nprot.2010.50).
+
+After Rsd filtering, 198 features were removed, which represents the 92.2% of 
+total number of features. Only `r nrow(assay(res))` features will remain. 
+AFter the normalisation we want to remove QCs samples to evaluate the quality data. Also, the data is used to see the clustering depending on cofactors as age and sex. 
+
+```{r removing-QCs}
+res_QC <- res[, res$device == "QC"] #only QCs
+res <- res[, !res$device == "QC"]
+
+#redefine colors
+leg_full <- brewer.pal(12, name = "Set3")[c(7, 5, 10, 4, 6)]
+names(leg_full) <- unique(res$device)
+col_sample <- leg_full[res$device]
+```
+
+After filter, Age and Sex PCA are plotting to asses if they could be cofactors for linear model. 
+
+```{r PCA-age}
+#' Add age to the PCA plot depending on age
+
+# subset res object to remove qcs to assess age. 
+#' Log2 transform and scale data
+vals <- assay(res, "raw_filled_imputed") |>
+    log2() |>
+    t() |>
+    scale(center = TRUE, scale = TRUE)
+#' Perform the PCA
+pca_res <- prcomp(vals, scale = FALSE, center = FALSE)
+
+vals_st_age <- cbind(vals, age = res$age)
+pca_age_12 <- autoplot(pca_res, data = vals_st_age , 
+                              colour = 'age', scale = 0)  +
+    theme_minimal()
+pca_age_12
+
+```
+??? How can I check if the age column is in res?
+Before it was workign autoplot for the res object?
+
+```{r PCA_age, echo=TRUE, fig.height=5, fig.width=10}
+#' Add age to the PCA plot depending on sex
+vals_st_sex <- cbind(vals, sex = res$sex)
+pca_sample_sex_12 <- autoplot(pca_res, data = vals_st_sex , colour = 'sex', scale = 0) +
+    theme_minimal()
+grid.arrange(pca_sample_sex_12)
+```
+
+# QUALITATIVE ANALYSIS
+In order to do a qualitative comparison between the devices and reference 
+samples, number of features, percentage of missing values, and distribution of intensities will be analysed in bar plots. Unique features will be assessed in an upset plot. 
+
+## Device specific blanks 
+
+Apart from possible contaminants from double blanks, it would be interesting to assess which device is more prone to contamination. That would be translate in which device has more chrompeak detected, as it is expected to have the less as possible. 
+In this case, blank from whatman, mitra and capitainer were subsetted from  he raw sumExp object (res). All intensities values will be transformed into a binary matrix where 1 is feature present, 0 is feature not present. Using the  colSum() function all features found in each device are sum per sample and then ploted in a barplot.   
+
+(We realized that with raw-filled assay it doesn't bring new information, as 
+after the gap-filling almost all features will have intensity values and  therefor will have been detected). 
+
+Same data is ploted with raw assay to avoid filling process. 
+
+```{r}
+#x <- res[, 1]
+small_fct <-function (x){
+    as.integer(!is.na(x))
+}
+#small_fct(x)
+```
+
+```{r}
+b_fts <- apply(assay(res_blank[,idx_bl_sp], "raw"), 2, small_fct)
+colnames(b_fts) <- c("Whatman Blank", "Mitra Blank", "Capitainer Blank")
+
+#Bar Plot to identify NA per device
+barplot(colSums(b_fts), col = leg_blank_BuS, ylab = "Number of features", 
+        space = 0.25, ylim = c(0, 600), main = "Number of features per Blank Type (raw data)")
+```
+
+Blank from Mitra seems to have less features (226) in the blank than Whatman (178) and Capitainer (301), being Capitainer blank the one with highest number
+of features, which could be related with some possible contaminants due to the device.   
+NOTE: we do not remove blank_sp features becasue there are no triplicates. 
+
+### Upset Plot Blanks
+
+```{r upset-plot-blank, eval=FALSE}
+#' Upset plot from device specific blanks
+upset(as.data.frame(b_fts), sets.bar.color = c("#80B1D3","#B3DE69", "#BC80BD"))
+```
+If we look specifically in a Upset plot, it can be identified the unique devices features and common features to all devices. In this case, there is a big overlap between blank devices. However, we found unique features present only in specific devices (86 unique features in Capitainer, 63 in whatman and 6 in mitra).  
+
+However, we cannot identify them as there are no MSMS data from blanks. Only we could compare if they are statistical signigicant during the statistical analysis. 
+
+## Number of features and missing values
+
+To assess the number of features and missing values per device and reference samples (blood and plasma) it is required to create a binary matrix from the sumExp object where 0 is non detected and 1 is detected. As this time, we have 10 samples per group, there will be a criteria: if it is detected in less than 5 samples per group it will be consider as non detected (0).  
+
+Why do we use unfilled data for qualitative analysis? 
+
+During the gap filling, the algorithm is rescuing intensities of NA features in some samples from the unfilled data. The reason why we can rescue that data is because those features are already present in at least one sample.  
+However, if we want to do an experiment only with one type of device or reference samples, the algorithm won't know those missing features. So, it is important to keep raw data to measure the number of features. 
+However, for quantitative analysis, as intensity will be taken into account and imputation will need to be done, it would be better to do gap filling beforehand. 
+
+```{r upset-plot}
+# Indexing per device to sum per rows
+idx_W <- sampleData(lcms1)$device == "WHATMAN"
+idx_C <- sampleData(lcms1)$device == "CAPITAINER"
+idx_M <- sampleData(lcms1)$device == "MITRA"
+idx_B <- sampleData(lcms1)$device == "BLOOD"
+idx_P <- sampleData(lcms1)$device == "PLASMA"
+
+# Create a data frames per groups for the BAR plot with binary data
+fts_W <- apply(assay(res[,idx_W], "raw"), 2, small_fct)
+fts_C <- apply(assay(res[,idx_C], "raw"), 2, small_fct)
+fts_M <- apply(assay(res[,idx_M], "raw"), 2, small_fct)
+fts_B <- apply(assay(res[,idx_B], "raw"), 2, small_fct)
+fts_P <- apply(assay(res[,idx_P], "raw"), 2, small_fct)
+
+# Create a binary matrix with condition: <5 = 0
+# binary_all <- cbind(
+#     ifelse(rowSums(fts_W) < 5, 0, 1),
+#     ifelse(rowSums(fts_C) < 5, 0, 1),
+#     ifelse(rowSums(fts_M) < 5, 0, 1),
+#     ifelse(rowSums(fts_B) < 5, 0, 1),
+#     ifelse(rowSums(fts_P) < 5, 0, 1)
+#     ) 
+#' Create the dataframe with TRUE/FALSE values per sample group. 
+#conditioning: if rowsum is more or igual than 5 it is TRUE, otherwise FALSE.
+logical_all <- data.frame(
+    WHATMAN = rowSums(fts_W) >= 5,
+    CAPITAINER = rowSums(fts_C) >= 5,
+    MITRA = rowSums(fts_M) >= 5,
+    BLOOD = rowSums(fts_B) >= 5,
+    PLASMA = rowSums(fts_P) >= 5
+    ) 
+
+colnames(binary_all) <- c("WHATMAN", "CAPITAINER", "MITRA", "BLOOD", "PLASMA")
+
+
+#Bar Plot to identify NA per device
+barplot(colSums(binary_all), col = leg_full, ylab = "Number of features", 
+        space = 0.25, ylim = c(0, 2500), main = "Number of features per sample group")
+
+
+```
+Once error solved, replace binary_all by logical_all and delete logical all from below. 
+As we were expecting plasma has less number of features than the rest and all devices have a similar number of features, being Whatman the device with higher number of features: 
+
+```{r}
+colSums(binary_all)
+```
+
+### Upset Plot samples
+
+In our analysis, we aim to study deeper the distribution and overlap of features across various sample groups. Specifically, we are interested in identifying the number of features that are common to all samples, those that are shared exclusively among specific devices, and the features that are unique to each sample group. To achieve this, an upset plot provide a clear visualisation of all sets of intersections: 
+
+```{r up-set-all}
+#' Upset plot from device specific blanks
+upset(as.data.frame(binary_all), sets.bar.color = c("#B3DE69", "#BC80BD", "#80B1D3","#FB8072",   "#FDB462"))
+```
+
+Set size: plasma has the smallest set size, while Whatman has the largest. Mitra and capitainer seems to have a similar set size but as we created a binary matrix.  
+
+The upset plot shows there is 990 features common to all sample groups. However, there are 235 common to blood and devices and 291 common to devices. 
+Plasma is the group with more unique features (167). 
+It would be interesting to identify number of unique features per sample group and features common to all devices. 
+
+
+```{r NMissing-values}
+#| fig-height: 8
+#| fig-width: 5
+# log 2 intensities
+intensity <- cbind(
+    Whatman = log2(as.numeric(assay(res[,idx_W], "raw_filled"))),
+    Capitainer = log2(as.numeric(assay(res[,idx_C], "raw_filled"))),
+    Mitra = log2(as.numeric(assay(res[,idx_M], "raw_filled"))),
+    Blood = log2(as.numeric(assay(res[,idx_B], "raw_filled"))),
+    Plasma = log2(as.numeric(assay(res[,idx_P], "raw_filled")))
+)
+#percentage of missing values with unfilled data. 
+percent_missing <- cbind(
+    Whatman = sum(is.na(assay(res[,idx_W], "raw")))/length(assay(res[,idx_W], "raw")) * 100, 
+    Capitainer = sum(is.na(assay(res[,idx_C], "raw")))/length(assay(res[,idx_C], "raw")) * 100,
+    Mitra = sum(is.na(assay(res[,idx_M], "raw")))/length(assay(res[,idx_M], "raw")) * 100,
+    Blood = sum(is.na(assay(res[,idx_B], "raw")))/length(assay(res[,idx_B], "raw")) * 100,
+    Plasma = sum(is.na(assay(res[,idx_P], "raw")))/length(assay(res[,idx_P], "raw")) * 100
+)
+# Plot
+layout(mat = matrix(1:3, ncol = 1), height = c(0.3, 0.3, 0.8))
+par(mar = c(1, 4.5, 1, 3))
+barplot(colSums(binary_all), col = leg_full, ylab = "Number of features", 
+        space = 0.05)
+barplot(c(percent_missing), ylab = "% of missing values", 
+        col = leg_full, space = 0.05, ylim = c(0, 60))
+vioplot(intensity, ylab = "Log2 intensity", col = leg_full,
+        space = 0.10, ylim = c(4, 25))
+```
+
+If I used the unfilled and filtered dataset I see the distribution of low intensity features is cut. 
+(question: Should I keep the original assay (assay(res)$raw) without gapfilling?
+            median scaling? 
+            noise threshold?)
+
+## Distribution across rt
+
+```{r eval=FALSE}
+#' Bin features per RT slices
+
+vc <- rowData(res)$rtmed
+breaks <- seq(60, max(vc, na.rm = TRUE) + 1, length.out = 15) |> 
+    round(0) 
+cuts <- cut(vc, breaks = breaks, include.lowest = TRUE)
+table(cuts)
+
+num_ft <- apply(binary_all, MARGIN = 2, 
+                function(x) unlist(lapply(split(x, cuts), sum)))
+
+#' Create the dataframe with TRUE/FALSE values per sample group. 
+#conditioning: if rowsum is more or igual than 5 it is TRUE, otherwise FALSE.
+logical_all <- data.frame(
+    WHATMAN = rowSums(fts_W) >= 5,
+    CAPITAINER = rowSums(fts_C) >= 5,
+    MITRA = rowSums(fts_M) >= 5,
+    BLOOD = rowSums(fts_B) >= 5,
+    PLASMA = rowSums(fts_P) >= 5
+    ) 
+
+#' Subset Res object per sample group
+res_w <- res[logical_all$WHATMAN, res$device == "WHATMAN"]
+res_m <- res[logical_all$MITRA, res$device == "MITRA"]
+res_c <- res[logical_all$CAPITAINER, res$device == "CAPITAINER"]
+res_b <- res[logical_all$BLOOD, res$device == "BLOOD"]
+res_p <- res[logical_all$PLASMA, res$device == "PLASMA"]
+
+#' Create funtion to sum intensities per groups and then per rt slices. 
+ftc <-function(res_devices, fts_idx) {
+    tmp <- rowMedians(assay(res_devices, "raw"), na.rm = TRUE) # get median of intensity per feature
+    cuts_tmp <- cuts[fts_idx] #split into the rt ranges/slices
+    t <- split(tmp, cuts_tmp) |>
+        lapply(sum, na.rm = TRUE, simplify = TRUE) # summing per slices
+    unlist(t)
+}
+
+ftc(res_devices = res_w, fts_idx = logical_all$WHATMAN)
+ftc(res_devices = res_m, fts_idx = logical_all$MITRA)
+ftc(res_devices = res_c, fts_idx = logical_all$CAPITAINER)
+ftc(res_devices = res_b, fts_idx = logical_all$BLOOD)
+ftc(res_devices = res_p, fts_idx = logical_all$PLASMA)
+
+int <- list(
+    WHATMAN = log2(ftc(res_w, logical_all$WHATMAN)),
+    MITRA = log2(ftc(res_m, logical_all$MITRA)),
+    CAPITAINER = log2(ftc(res_c, logical_all$CAPITAINER)),
+    BLOOD = log2(ftc(res_b, logical_all$BLOOD)),
+    PLASMA = log2(ftc(res_p, logical_all$PLASMA))
+    )
+
+# Plot
+layout(mat = matrix(1:2, ncol = 1), heights = c(0.5, 0.5))
+par(mar = c(0.5, 4.5, 2, 3))
+
+## Plot number of features
+ylim_features <- c(0, max(unlist(num_ft)))
+plot(x = seq_len(nrow(num_ft)), y = num_ft[,1], col = leg_full[1], ylab = "Number of features",
+     xlab = "", type = "b", pch = 16, xaxt = "n", ylim = ylim_features,
+     main = "Analysis along the RT axis for each devices")
+for (i in 2:ncol(num_ft)) {
+   points(x = seq_len(nrow(num_ft)), y = num_ft[,i], col = leg_full[i], type = "b", pch = 16)
+}
+axis(1, at = 1:length(num_ft[,1]), labels = FALSE)
+grid(lwd = 0.5)
+legend("top", legend = names(binary_all), col = leg_full, pch = 16, 
+       cex = 0.8, horiz = TRUE, bty = "n")
+
+# Plot intensity
+# par(mar = c(0.5, 4.5, 2, 3))
+ylim_intensity <- range(unlist(int))
+plot(int[[1]], type = "b", pch = 16, xlab = "",
+     ylab = "Log2 intensity", col = leg_full[[1]], xaxt = "n", ylim = ylim_intensity)
+for (i in 2:length(int)) {
+  lines(int[[i]], type = "b", pch = 16, col = leg_full[i])
+}
+axis(1, at = 1:length(int), 
+     labels = names(int), las = 2, cex.axis = 0.8)
+mtext("Retention time (s)", side = 1, line = 4, cex = 1)
+grid()
+```
+
+
+
+It is also interesting to see how intesities changes accross the retention time. 
+NOTE: Change binary_all by logical_all. 
+
+
+# DIFFERENCIAL ABUNDANCE ANALYSIS (lm)
+
+The next step is to identify features that are differential abundant between the devices and reference samples. This allows to identify potential metabolites that are extracted with significant differences within different devices. 
+In this case, a multiple linear regression analysis is used to identify the features with significantly difference in abundances between Whatman, Mitra, capitainer, Blood or plasma. 
+First, it is important to evaluate the similarities between study samples using PCA, after excluding QC samples to avoid them to bring variance. 
+
+We want to see variantion within the devices so first we will see how they cluster. 
+
+```{r PCA-only-samples-before-lm}
+#| echo: false
+#| fig-cap: "PCA after normalization of all samples colored by device"
+
+#' Data without blanks and QCs after normalization
+vals_st_sample <- apply(assay(res, "norm_imputed"), MARGIN = 1, na_unidis) >
+    log2() |>
+    scale(center = TRUE, scale = TRUE)
+pca_res_norm <- prcomp(vals_st_sample, scale = FALSE, 
+                               center = FALSE)
+
+
+vals_st_sample <- cbind(vals_st_sample, device = res$device)
+pca_sample_adj <- autoplot(pca_res_norm, data = vals_st_sample,
+                    color = 'device', scale = 0) +
+    scale_color_manual(values = leg_full) +
+    labs (title = "PCA after Normalization") +
+    theme_minimal()
+
+grid.arrange(pca_sample_adj, ncol = 1)
+```
+For our analysis we use a linear model ~ device + sex + participant, hence explaining the abundances of one metabolite accounting for the study group assignment and sex of each individual.
+
+```{r}
+
+#' Define the linear model to be applied to the data
+p.cut <- 0.05     # cut-off for significance.
+m.cut <- 0.5      # cut-off for log2 fold change
+
+#' Define the linear model to be applied to the data
+device <- factor(res$sample_group)
+sex <- res$sex
+participants <- factor(res$participants)
+
+design <- model.matrix(~ device + sex + participants)
+
+#' Fit the linear model to the data, explaining metabolite
+#' concentrations by phenotype and age.
+fit <- lmFit(log2(assay(res, "norm_imputed")), design = design)
+fit <- eBayes(fit)
+```
+extract the results:
+
