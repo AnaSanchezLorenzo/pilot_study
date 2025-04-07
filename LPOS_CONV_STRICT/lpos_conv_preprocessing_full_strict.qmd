@@ -1,5 +1,5 @@
 ---
-title: "Data analysis of Pilot Study from Imperial - Full data."
+title: "Data analysis of Pilot Study from Imperial - Full data LPOS method."
 format: html
 tbl-cap-location: bottom
 editor: visual
@@ -28,11 +28,11 @@ differences).
 The samples used in this study were venous blood samples collected from 10
 healthy individuals ( 5 men and 5 women) in EDTA tubes. Part of this blood was
 used as whole blood sample, part was used for plasma extraction and part was
-spiked in devices to simulate sample collection through fingerprick.
+spiked in devices to simulate sample collection through finger-prick.
 
 Total number of samples: 66
 
-double blanks:
+Double blanks: 4
 
 -   BLANK_001(beginning)
 
@@ -42,7 +42,7 @@ double blanks:
 
 -   BLANK_END
 
-Blanks from devices:
+Blanks from devices: 3
 
 -   Blank_W
 
@@ -50,7 +50,7 @@ Blanks from devices:
 
 -   Blank_C
 
-Randomise Samples:
+Randomized Samples: 60
 
 -   10 x WHATMAN
 
@@ -66,9 +66,10 @@ Randomise Samples:
 
 [**Sample preparation and acquisition**]{.underline}
 
-Samples were treated H2O and IPA for protein precipitation and lipids
+Samples were treated with H2O and IPA for protein precipitation and lipids
 extraction. Then extracts were analysed in a UPLC-ESI-QTOF system (Synapt-G2S)
-(Waters Corporation) using resolution mode for MS1 and FastDDA for MS2 data.
+(Waters Corporation) using TOFMS resolution mode for MS1 and FastDDA in
+resolution moed for MS2 data.
 
 ## Loading packages
 
@@ -111,6 +112,12 @@ library(MetaboAnnotation) # Functionality for metabolite annotation.
 
 # Data import
 
+Sample information with file name (mzML_file), injection order, sample type
+(device), age, sex and hematocrit from each participant, is provided in the
+metadata file imported as a data.frame (pd).
+
+MzML files and metadata are loaded as an XCMSExperiment object.
+
 ```{r import, message=FALSE}
 # Data import
 #' read the sample descriptions from an xlsx sheet
@@ -123,6 +130,14 @@ MZML_PATH <- file.path("data/lpos_conv")
 lcms1 <- readMsExperiment(file.path(MZML_PATH, "/", pd$mzML_file),
                           sampleData = pd)
 ```
+
+Before to run the analysis, it is important to configure the parallel processing
+setup that will improve the performance of the analysis using
+*RforMassSpectrometry* packages. It is set up in a socket-based parallel
+processing on the windows operating system.
+
+(I tried 3, 10, 6 and 4. With 10 and 6 it was really slow so i needed to put it
+back to 4). Important to change the chunksize with the same value.
 
 ```{r par-process}
 #' Set up parallel processing using 3 cores
@@ -239,19 +254,12 @@ time axis.
 Effective visualization is paramount for inspecting and assessing the quality of
 MS data. For a general overview of our LC-MS data, we can:
 
--   Combine all mass peaks from all (MS1) spectra of a sample into a single
-    spectrum in which each mass peak then represents the maximum signal of all
-    mass peaks with a similar *m/z*. This spectrum might then be called **Base
-    Peak Spectrum (BPS)**, providing information on the most abundant ions of a
-    sample.
 -   Aggregate mass peak intensities for each spectrum, resulting in the **Base
     Peak Chromatogram (BPC)**. The BPC shows the highest measured intensity for
     each distinct retention time (hence spectrum) and is thus orthogonal to the
     BPS.
 -   Sum the mass peak intensities for each spectrum to create a **Total Ion
     Chromatogram (TIC).**
--   **Compare the BPS** of all samples in an experiment to evaluate similarity
-    of their ion content.
 -   **Compare the BPC** of all samples in an experiment to identify samples with
     similar or dissimilar chromatographic signal.
 
@@ -263,7 +271,7 @@ results.
 
 ## Chromatographic Data Visualization: BPC and TIC
 
-```{r bpc1}
+```{r bpc1, eval = FALSE}
 #| fig-cap: "Figure 1. BPC before rt filtering of all samples colored by device."
 #| code-fold: true
 #| code-summary: "Show the code"
@@ -280,7 +288,7 @@ legend("topright", col = leg_full, legend = names(leg_full),
 Evaluating the BPC, we detected a intense peak between 0 to 60 seconds of
 features that didn't retain in the columns and a typical base line peak coming
 from the solvent. Also after 700 there shouldn 't be any interesting features.
-Rentention time filtering will need to be performed.
+Retention time filtering will need to be performed.
 
 We can also compare similarities of the TICs in the heatmap. Thus we bin() the
 chromatographic signal per sample along the retention time axis into a bins of 2
@@ -325,7 +333,7 @@ modification I am not aware of.
 Evaluating which part of the chromatogram, along the retention time contributes
 most to the observed differences, e.g. of Whatman against the other samples.
 
-```{r evalution-chromatogram-differences}
+```{r evalution-chromatogram-differences, eval = FALSE}
 #| fig-cap: "Figure 3. Heatmap of TIC similarities per 2-second retention time bins along the x-axis"
 #| code-fold: true
 #| code-summary: "Show the code"
@@ -352,7 +360,7 @@ similarity. Microsampling devices differ mostly in the beginning of the LC. The
 largest difference can be observed between Capitainer and all other samples.
 Below we repeat the plot, focusing on the first 30 seconds of the LC.
 
-```{r evalution-chromatogram-differences-30s}
+```{r evalution-chromatogram-differences-30s, eval = FALSE}
 #| fig-cap: "Figure 4. Heatmap of TIC similarities per 2-second retention time bins along 2 and 30 seconds"
 #| code-fold: true
 #| code-summary: "Show the code"
@@ -543,7 +551,7 @@ for (i in seq_len(nrow(intern_standard))) {
 }
 ```
 
-```{r run-find-chrompeak-on-entire-dataset-2, eval=file.exists("peakdetect_lcms1.RData")}
+```{r load-peak-detect-lcms1, eval=file.exists("peakdetect_lcms1.RData")}
 load("peakdetect_lcms1.RData")
 ```
 
@@ -574,7 +582,7 @@ save(lcms1, file = "refine_identified_lcms1.RData")
 
 After refinement, the chrompeak detected decreased from 137674 to 132055.
 
-```{r eval=file.exists("refine_identified_lcms1.RData")}
+```{r load-refine-id-lcms1, eval=file.exists("refine_identified_lcms1.RData")}
 load("refine_identified_lcms1.RData")
 ```
 
@@ -647,7 +655,7 @@ lcms1 <- applyAdjustedRtime(lcms1)
 save(lcms1, file = "align_lcms1.RData")
 ```
 
-```{r eval=file.exists("align_lcms1.RData")}
+```{r load-align-lcms1, eval=file.exists("align_lcms1.RData")}
 load("align_lcms1.RData")
 ```
 
@@ -675,7 +683,7 @@ for (i in seq_len(nrow(intern_standard))) {
 }
 ```
 
-Use the next code to test some extraction of chromatograms.
+Use the next code to test some extraction of chromatograms:
 
 ```{r rt_alignment_6, eval=FALSE, include=FALSE}
 # Test chromatogram()
@@ -689,7 +697,7 @@ As described above, for the present data set we don't need to perform a
 retention time alignment. Thus we load below the data that was saved **before**
 performing the alignment and proceed the analysis with that data.
 
-```{r eval=file.exists("refine_identified_lcms1.RData")}
+```{r load-refine-lcms1, eval=file.exists("refine_identified_lcms1.RData")}
 load("refine_identified_lcms1.RData")
 ```
 
@@ -726,7 +734,7 @@ save(lcms1, file = "corres_lcms1.RData")
 nrow(featureDefinitions(lcms1))
 ```
 
-Binsize depends on the resolution of the instrument. We decreate from 0.25 to
+Binsize depends on the resolution of the instrument. It decrease from 0.25 to
 0.01. MinFraction: defines features only if chrompeak was identified in at least
 75% of the samples of one of the sample groups.
 
@@ -734,7 +742,7 @@ Binsize depends on the resolution of the instrument. We decreate from 0.25 to
 featureDefinitions(lcms1) |> head()
 ```
 
-```{r eval=file.exists("corres_lcms1.RData")}
+```{r load-corres-lcms1, eval=file.exists("corres_lcms1.RData")}
 load("corres_lcms1.RData")
 ```
 
@@ -842,7 +850,7 @@ lcms1 <- fillChromPeaks(lcms1, param = ChromPeakAreaParam(), chunkSize = 10)
 save(lcms1, file = "gapfilling_lcms1.RData")
 ```
 
-```{r eval=file.exists("gapfilling_lcms1.RData")}
+```{r load-gap-filling-lcms1, eval=file.exists("gapfilling_lcms1.RData")}
 load("gapfilling_lcms1.RData")
 ```
 
@@ -852,9 +860,9 @@ sum(is.na(featureValues(lcms1))) /
     length(featureValues(lcms1)) * 100
 ```
 
-The gap-filling rescue up to 1.4% Missing Value.
+The gap-filling rescue up signal of most of missing values, remaining only 1.4% Missing Value. 
 
-```{r}
+```{r subset-lcms1-blank}
 lcms1_noblanks <- lcms1[sampleData(lcms1)$device!="BLANK", keepFeatures = TRUE]
 ```
 
@@ -900,7 +908,7 @@ gap-filled value compared to the detected value. We visually inspect this data
 using a heatmap to potentially identify any relationship between sample groups
 and differences in the gap-filled values.
 
-```{r}
+```{r gap-filling-evaluation, eval=FALSE}
 #' Identify gap-filled features with a log2 difference in abundance being > 3
 #' Note: log2 difference of 2 represents a 2^3 = 8-fold difference in natural scale
 #| fig-cap: "Figure 10. Detect vs filled signal (heatmap)."
@@ -1015,14 +1023,14 @@ grid.arrange(ion_map, ncol = 1, heights = unit(4, "in"),widths = unit(7.5, "in")
 
 Representation with base R.
 
-```{r}
-
+```{r ion-map-baseR}
+#| fig-cap: "Figure 12. Ion Map with Blank flagged features."
 fa <- featureArea(lcms1)
 xl <- range(fa[, c("rtmin", "rtmax")])
 
 ## BPC
 par(mfrow = c(2, 1), mar = c(0, 4.5, 0.5, 0.5))
-plot(bpc, xlim = xl, main = "", xlab = "", xaxt = "n")
+plot(bpc_filtered, xlim = xl, main = "", xlab = "", xaxt = "n")
 grid()
 par(mar = c(4.5, 4.5, 0, 0.5))
 ## Feature "area"
@@ -1042,46 +1050,8 @@ lines along the full retention time range. These could represent contamination
 with e.g. salts. Also, vertically aligned groups of features are present. These
 could represent multiple ions/adducts of the same compound.
 
-### Noise Comparison
 
-Below we compare the noise signals between devices. We first calculate the
-overall signal in the dataset and then calculate the signal that is in the
-chromatographic peaks detection. We then subtract the two to get the noise
-signal.
-
-```{r Noise_comparison, echo=FALSE}
-# overall signal in the dataset 
-#' - for each file calculate the sum of intensities 
-background  <- spectra(lcms1[!idx_blank_qc]) |>
-    split(fromFile(lcms1[!idx_blank_qc])) |>
-    lapply(tic) |>
-    lapply(sum) |>
-    unlist()
-
-# Overall signal that is in the chromatographic peaks detection 
-detected <- apply(assay(res_sample), 2, function(x) sum(x, na.rm = TRUE))
- 
-# substract and plot
-names(background) <- names(detected) <- res_sample$device
-noise <- background - detected
- 
-f <- factor(names(noise), levels = unique(names(noise)))
-group <- split(noise, f)
- 
-plot(NULL, xlim = c(1, length(group)), ylim = range(unlist(group)), 
-     xaxt = "n", xlab = "Devices", ylab = "Noise", 
-     main = "Noise comparison between Devices")
-for (i in seq_along(group)) {
-  points(rep(i, length(group[[i]])), group[[i]], pch = 19, 
-col = leg_devices[i])
-}
-axis(1, at = seq_along(group), labels = names(group))
-```
-
-Plasma shows more background noise than devices and seems to be less
-reproducible than the others.
-
-\## Preprocessing results
+# Preprocessing results
 
 The final results of the LC-MS data preprocessing are stored within the
 `XcmsExperiment` object. As well as the exact preprocessing performed and each
@@ -1113,3 +1083,44 @@ assayNames(res)
 save(lcms1, file = "preprocessed_lcms1.RData")
 save(res, file = "res.RData")
 ```
+
+### Noise Comparison
+
+Below we compare the noise signals between devices. We first calculate the
+overall signal in the dataset and then calculate the signal that is in the
+chromatographic peaks detection. We then subtract the two to get the noise
+signal.
+
+```{r Noise_comparison}
+#| fig-cap: "Figure 13. Noise Comparison plot."
+#|
+# overall signal in the dataset 
+#' - for each file calculate the sum of intensities 
+background  <- spectra(lcms1[!idx_blank_qc]) |>
+    split(fromFile(lcms1[!idx_blank_qc])) |>
+    lapply(tic) |>
+    lapply(sum) |>
+    unlist()
+
+# Overall signal that is in the chromatographic peaks detection 
+detected <- apply(assay(res[,!idx_blank_qc]), 2, function(x) sum(x, na.rm = TRUE))
+ 
+# substract and plot
+names(background) <- names(detected) <- res$device[!idx_blank_qc]
+noise <- background - detected
+ 
+f <- factor(names(noise), levels = unique(names(noise)))
+group <- split(noise, f)
+ 
+plot(NULL, xlim = c(1, length(group)), ylim = range(unlist(group)), 
+     xaxt = "n", xlab = "Devices", ylab = "Noise", 
+     main = "Noise comparison between Devices")
+for (i in seq_along(group)) {
+  points(rep(i, length(group[[i]])), group[[i]], pch = 19, 
+col = leg_devices[i])
+}
+axis(1, at = seq_along(group), labels = names(group))
+```
+
+Plasma shows more background noise than devices and seems to be less
+reproducible than the others.
