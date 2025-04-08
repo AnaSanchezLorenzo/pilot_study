@@ -72,6 +72,7 @@ idx_blank_qc <- sampleData(lcms1)$device %in% c("QC","BLANK")
 idx_samples <- sampleData(lcms1)$device %in% c("WHATMAN", "MITRA", "CAPITAINER", "PLASMA", "BLOOD")
 idx_bl_sp <- sampleData(lcms1)$blank_type %in% c("BLANK_W", "BLANK_C", "BLANK_M")
 ```
+
 ```{r par-process}
 #' Set up parallel processing using 3 cores
 if (.Platform$OS.type == "unix") {
@@ -100,9 +101,10 @@ col_blank_BuS <- leg_blank_BuS[sampleData(lcms1[!idx_bl_sp])$device]
 leg_blank_BuS <- leg_blank_BuS[c("WHATMAN", "MITRA", "CAPITAINER")]
 ```
 
-##Participants column addition For Differential abundance analysis 
+##Participants column addition For Differential abundance analysis
 
-Linear model will include need to specify participants. For that we need to add a new column from sample_name. 
+Linear model will include need to specify participants. For that we need to add
+a new column from sample_name.
 
 ```{r participants}
 #' Create a new column with participants names without device specification.
@@ -116,9 +118,14 @@ colData(res)$participants[idx_blank_qc] <- NA_character_
 
 ## Initial quality assesment
 
-Before normalization, PCA plot detect possible biases in data. Principal Component Analysis is an unsupervised visualization that enables data dimensionality reduction in order to visualise batch effect, injection index variation and clustering of group samples.  
+Before normalization, PCA plot detect possible biases in data. Principal
+Component Analysis is an unsupervised visualization that enables data
+dimensionality reduction in order to visualise batch effect, injection index
+variation and clustering of group samples.
 
-Imputation of missing values is need by replacing by random numbers from a uniform distribution from half the smallest signal measured for a specific feature to its minimal value. 
+Imputation of missing values is need by replacing by random numbers from a
+uniform distribution from half the smallest signal measured for a specific
+feature to its minimal value.
 
 ```{r Impute_MV}
 #' Impute missing values using an uniform distribution
@@ -138,7 +145,8 @@ assays(res)$raw_filled_imputed <- t(tmp)
 
 ### subset sumExp
 
-In this line, blanks are removed from the we are subsetting the res object to do not take into account blanks and/or QCs.
+In this line, blanks are removed from the we are subsetting the res object to do
+not take into account blanks and/or QCs.
 
 ```{r PCA_indexing}
 # PCA without blank
@@ -159,9 +167,12 @@ leg_full["QC"] <- "#f00e0e"
 col_sample <- leg_full[res$device]
 ```
 
-For better representation, data is log2 transform and center in order to stabilize the variance and remove dependence on absolute abundances, respectively. 
+For better representation, data is log2 transform and center in order to
+stabilize the variance and remove dependence on absolute abundances,
+respectively.
 
-Plot all the PCA to observe the data structure and grouping of the different samples.
+Plot all the PCA to observe the data structure and grouping of the different
+samples.
 
 ```{r PCA_noblank, fig.height=5, fig.width=10}
 #| echo: false
@@ -186,9 +197,16 @@ pca_34 <- autoplot(pca_res , data = vals_st, colour = 'device',
     theme_minimal()
 grid.arrange(pca_12, pca_34, ncol = 2)
 ```
-In the first PCA, study samples from each sample group are clustered separated form QCs, with biggest representation of variance by PC1 (37.88%) and PC2 (12.89%). Plasma is more separation from blood and devices, and devices seem to be close to each other. PC3 and PC4 do not contribute that much in the variance between sample groups. 
 
-However, QC samples are spread across PC2, highlighting a possible technical issue during the run. In the plot below, injection order correlation is analysed in case injection order correction is needed. 
+In the first PCA, study samples from each sample group are clustered separated
+form QCs, with biggest representation of variance by PC1 (37.88%) and PC2
+(12.89%). Plasma is more separation from blood and devices, and devices seem to
+be close to each other. PC3 and PC4 do not contribute that much in the variance
+between sample groups.
+
+However, QC samples are spread across PC2, highlighting a possible technical
+issue during the run. In the plot below, injection order correlation is analysed
+in case injection order correction is needed.
 
 ```{r PCA_inj_order_samples_QCs, echo=TRUE, fig.height=5, fig.width=10}
 #| fig-cap: "Figure 2. PCA of all samples and QCs colored by injection order"
@@ -206,7 +224,10 @@ pca_injidx_34 <- autoplot(pca_res, data = vals_st, colour = 'injection_index',
 grid.arrange(pca_injidx_12, pca_injidx_34, ncol = 2)
 
 ```
-The PCA above shows a injection order correlation with the variance of QC samples. To correct it and decrease variability due to technical bias, median scaling will be performed. 
+
+The PCA above shows a injection order correlation with the variance of QC
+samples. To correct it and decrease variability due to technical bias, median
+scaling will be performed.
 
 ### Intensity evaluation
 
@@ -234,8 +255,16 @@ legend("topright", col = leg_full,
        legend = names(leg_full), lty=1, lwd = 2, xpd = TRUE, ncol = 3,
        cex = 0.8,  bty = "n")
 ```
-The representation above of total intensities and log2 feature abundance per sample show a decrease of number of features detected alog the retention time due to instrumental sensibility decreased.The standard deviation is higher  and the number of features decreased in the end of the analysis. This change is shown in all samples and is particularly obvious in QC samples. As samples were randomized, the injection order correction will only affect the instrumental variability and not biological variability. 
-The comparison between raw data and raw filled data showed that gap filling step rescue those features that have not being detected in samples along the analysis. 
+
+The representation above of total intensities and log2 feature abundance per
+sample show a decrease of number of features detected alog the retention time
+due to instrumental sensibility decreased.The standard deviation is higher and
+the number of features decreased in the end of the analysis. This change is
+shown in all samples and is particularly obvious in QC samples. As samples were
+randomized, the injection order correction will only affect the instrumental
+variability and not biological variability. The comparison between raw data and
+raw filled data showed that gap filling step rescue those features that have not
+being detected in samples along the analysis.
 
 ### CV values
 
@@ -250,17 +279,23 @@ res_df <- quantile(cv_qc, na.rm = TRUE)
 
 kable(res_df, format = "pipe")
 ```
-A preliminary calculation of CV values show that 75% of features have CV<30% (23%), which indicates that less than 25% of features will be filtered after the normalization. 
+
+A preliminary calculation of CV values show that 75% of features have CV\<30%
+(23%), which indicates that less than 25% of features will be filtered after the
+normalization.
 
 ### RLA
 
-An RLA (Relative Log Abundance) value is the abundance of a feature in a sample relative to the median abundance of the same feature across multiple samples.
+An RLA (Relative Log Abundance) value is the abundance of a feature in a sample
+relative to the median abundance of the same feature across multiple samples.
 
 -   Within group RLA plots: assess tightness of replicates within groups should
     have a median close to zero and low variation around it.
--   Across groups RLAs: they allow to compare behavior between group. 
+-   Across groups RLAs: they allow to compare behavior between group.
 
-In this case, we apply calculate RLAs across groups to compare the RLA between different groups and detect possible between-samples differences across the analysis. 
+In this case, we apply calculate RLAs across groups to compare the RLA between
+different groups and detect possible between-samples differences across the
+analysis.
 
 ```{r RLA-log-abundance}
 #| fig-cap: "Figure 4. RLAs plot for the filled data across the analysis"
@@ -282,22 +317,35 @@ legend("topright", col = leg_full,
 
 ```
 
-On the RLA plot above, we can see that median is not centered around 0 and decrease after
-QC07 (red samples). This can be associated to the sensibility of the instrument and detector
-value optimisation across the analysis (is it worthy to include "autogain" in
-method? Technical issues?). 
-Also, mainly with Plasma samples there is more variability, which is also shown in the PCA. This requires samples need to be centered. 
+On the RLA plot above, we can see that median is not centered around 0 and
+decrease after QC07 (red samples). This can be associated to the sensibility of
+the instrument and detector value optimisation across the analysis (is it worthy
+to include "autogain" in method? Technical issues?). Also, mainly with Plasma
+samples there is more variability, which is also shown in the PCA. This requires
+samples need to be centered.
 
 ## Between sample normalisation
 
-Between-sample normalization use filled-in features to effectively mitigate variations influenced by technical issues, such as differences in sample preparation, processing and injection methods. In this instance, we will employ a commonly used technique known as median scaling.
+Between-sample normalization use filled-in features to effectively mitigate
+variations influenced by technical issues, such as differences in sample
+preparation, processing and injection methods. In this instance, we will employ
+a commonly used technique known as median scaling.
 
 ### Median Scaling
 
-This method involves computing the median for each sample, followed by determining the median of these individual sample medians. This ensures consistent median values for each sample throughout the entire data set.
-Maintaining uniformity in the average total metabolite abundance across all samples is crucial for effective implementation.
+This method involves computing the median for each sample, followed by
+determining the median of these individual sample medians. This ensures
+consistent median values for each sample throughout the entire data set.
+Maintaining uniformity in the average total metabolite abundance across all
+samples is crucial for effective implementation.
 
-This process aims to establish a shared baseline for the central tendency of metabolite abundance, mitigating the impact of sample-specific technical variations. This approach fosters a more robust and comparable analysis of the top features across the data set. The assumption is that normalizing based on the median, known for its lower sensitivity to extreme values, enhances the comparability of top features and ensures a consistent average abundance across samples.
+This process aims to establish a shared baseline for the central tendency of
+metabolite abundance, mitigating the impact of sample-specific technical
+variations. This approach fosters a more robust and comparable analysis of the
+top features across the data set. The assumption is that normalizing based on
+the median, known for its lower sensitivity to extreme values, enhances the
+comparability of top features and ensures a consistent average abundance across
+samples.
 
 ```{r normalization-factor-all}
 #' Compute median and generate normalization factor
@@ -312,7 +360,11 @@ assays(res)$norm_imputed <- sweep(assay(res, "raw_filled_imputed"), MARGIN = 2,
 
 ```
 
-The median scaling is calculated for imputed and non-imputed data, with each set stored separately within the summarizedExperiment object. This approach facilitates testing various nromalisation strategies while maintaining the record of all processing steps undertaken, enabling easy regression to previous stages if necessary. 
+The median scaling is calculated for imputed and non-imputed data, with each set
+stored separately within the summarizedExperiment object. This approach
+facilitates testing various nromalisation strategies while maintaining the
+record of all processing steps undertaken, enabling easy regression to previous
+stages if necessary.
 
 ```{r normalization-factor-all-2}
 #' Compute median and generate normalization factor
@@ -327,7 +379,8 @@ assays(res_blank)$norm_imputed <- sweep(assay(res_blank, "raw_filled_imputed"), 
 
 ```
 
-Same step is repeating in blank samples set as all processing needs to be done for Qualitative Analysis and Blank samples. 
+Same step is repeating in blank samples set as all processing needs to be done
+for Qualitative Analysis and Blank samples.
 
 ## Assessing overall effectiveness of the normalisation approach
 
@@ -375,10 +428,17 @@ grid.arrange(pca_raw, pca_adj, ncol = 1)
 ```
 
 Normalization have an impact in PC1 improving the grouping of QCs, Plasma and
-Blood samples. Regarding QC samples, they cluste more tightly compared to the prenormalisation PCA suggesting improved non-biological variation effect in the experiment. 
+Blood samples. Regarding QC samples, they cluste more tightly compared to the
+prenormalisation PCA suggesting improved non-biological variation effect in the
+experiment.
 
-In terms of similarities between sample groups, microsampling devices (Capitainer, Mitra and Whatman) cluster closely together and are clearly separated from the whole blood and plasma samples along the PC1, which represent 44.26% of variance. This suggests that microsampling devices present similar profiles, which differ from conventional matrices.
-Capitainer could be more similar to blood and Mitra more similar to plasma but it is important to do a quantitative analysis to determine if there are significant differences. 
+In terms of similarities between sample groups, microsampling devices
+(Capitainer, Mitra and Whatman) cluster closely together and are clearly
+separated from the whole blood and plasma samples along the PC1, which represent
+44.26% of variance. This suggests that microsampling devices present similar
+profiles, which differ from conventional matrices. Capitainer could be more
+similar to blood and Mitra more similar to plasma but it is important to do a
+quantitative analysis to determine if there are significant differences.
 
 ### Intensity Evaluation (RLA)
 
@@ -419,9 +479,12 @@ legend("topright", col = leg_full,
 
 ```
 
-After normalization, relative log abundance plot shows that all QCs abundance have been centered around the median. This make the medians of each sample close to zero.
+After normalization, relative log abundance plot shows that all QCs abundance
+have been centered around the median. This make the medians of each sample close
+to zero.
 
-RLA plot is performed again only focussing on QC samples for better visualisation. 
+RLA plot is performed again only focussing on QC samples for better
+visualisation.
 
 ```{r RLA-after-norm1, fig.height=7, fig.width=7}
 #| fig-cap: "Figure 7. RLA of QCs before and after normalisation."
@@ -513,7 +576,15 @@ plot_density_full <- plot(NA, xlim=range(sapply(dens, "[", "x")), ylim=range(sap
     # Add a legend to the plot
     legend("topright", legend = names(dens), fill = transparent_cols, title = "Variables")
 ```
-In the density plot above, normalisation effect on the coefficient of variation (CV) values is evaluated. After applying median scaling, the variance among QC samples is reduced (from 23% to 16%), indicating effective correction of technical variability. In contrast, the distribution of CVs in the study samples remains, suggesting biological variability has been preserved. However, the variance in the biological samples stay without changes. This demonstrates that the normalization method successfully minimizes technical noise without compromising the biological signal.  
+
+In the density plot above, normalisation effect on the coefficient of variation
+(CV) values is evaluated. After applying median scaling, the variance among QC
+samples is reduced (from 23% to 16%), indicating effective correction of
+technical variability. In contrast, the distribution of CVs in the study samples
+remains, suggesting biological variability has been preserved. However, the
+variance in the biological samples stay without changes. This demonstrates that
+the normalization method successfully minimizes technical noise without
+compromising the biological signal.
 
 ```{r densityplot-qc}
 #| fig-cap: "Figure 9. Density plot for Normalisation evaluation with CV values distribuiton from QC samples."
@@ -547,13 +618,22 @@ legend("topright", legend = names(dens_subset), fill = transparent_cols_subset)
 
 ```
 
-This density plot shows the distribution of CV values for QC samples before (red) and after (green) normalization. The dashed vertical line at 30% represents a commonly used threshold in metabolomics for filtering out features with high technical variability. The plot allows visual assessment of how many features exceed this cutoff, and how normalization reduces the number of features above this threshold, thereby improving data quality while retaining more reliable variables.
+This density plot shows the distribution of CV values for QC samples before
+(red) and after (green) normalization. The dashed vertical line at 30%
+represents a commonly used threshold in metabolomics for filtering out features
+with high technical variability. The plot allows visual assessment of how many
+features exceed this cutoff, and how normalization reduces the number of
+features above this threshold, thereby improving data quality while retaining
+more reliable variables.
 
 # FILTERS:
 
 ## BlankFlag features filtering
 
-After the normalization, I removed all possible contaminants from the blank to avoid including features in the qualitative analysis. In this case, the 'possible_contaminant' column has NA values which need to be transformed in FALSE based.
+After the normalization, I removed all possible contaminants from the blank to
+avoid including features in the qualitative analysis. In this case, the
+'possible_contaminant' column has NA values which need to be transformed in
+FALSE based.
 
 ```{r blankflag-filter}
 # Keep an original object
@@ -575,7 +655,8 @@ Percentage remain features : 88%
 
 ## Filter RSD filter:
 
-RSD, defined as the st. dev of QC samples divided by st deviation for biological samples, for each feature. 
+RSD, defined as the st. dev of QC samples divided by st deviation for biological
+samples, for each feature.
 
 ```{r unfiltered-object}
 # Keep unfiltered object
@@ -592,7 +673,9 @@ filter_Rsd <- RsdFilter(threshold = 0.3,
 res <- filterFeatures(res, filter = filter_Rsd, assay = "norm_imputed")
 
 ```
-NOTE: check filtering. before 198 features were removed. Why now 200 features are removed?
+
+NOTE: check filtering. before 198 features were removed. Why now 200 features
+are removed?
 
 ```{r features-number}
 #' Number of features after analysis
@@ -600,6 +683,7 @@ nrow(res)
 #' Percentage left: end/beginning
 nrow(res)/nrow(res_orig) * 100
 ```
+
 As we need to assess number of features in blank we need to do all process of
 normalisation and filtering with res_blank object.
 
@@ -674,7 +758,7 @@ pca_sample_sex_12 <- autoplot(pca_res, data = vals_st_sex , colour = 'sex', scal
 grid.arrange(pca_sample_sex_12)
 ```
 
-PCAs do not show any clustering related with age or sex. 
+PCAs do not show any clustering related with age or sex.
 
 # QUALITATIVE ANALYSIS
 
@@ -721,8 +805,8 @@ barplot(colSums(b_fts), col = leg_blank_BuS, ylab = "Number of features",
 Blank from Mitra seems to have less features (226) in the blank than Whatman
 (178) and Capitainer (301), being Capitainer blank the one with highest number
 of features, which could be related with some possible contaminants due to the
-device.
-NOTE: we do not remove blank_sp features because there are no triplicates.
+device. NOTE: we do not remove blank_sp features because there are no
+triplicates.
 
 ### Upset Plot Blanks
 
@@ -809,7 +893,10 @@ text(x = bar_positions,
 
 ```
 
-Once error solved, replace binary_all by logical_all and delete logical all from below. As we were expecting plasma has less number of features than the rest and all devices have a similar number of features, being Whatman the device with higher number of features:
+Once error solved, replace binary_all by logical_all and delete logical all from
+below. As we were expecting plasma has less number of features than the rest and
+all devices have a similar number of features, being Whatman the device with
+higher number of features:
 
 ```{r}
 colSums(binary_all)
@@ -867,6 +954,7 @@ barplot(c(percent_missing), ylab = "% of missing values",
 vioplot(intensity, ylab = "Log2 intensity", col = leg_full,
         space = 0.10, ylim = c(4, 25))
 ```
+
 If I used the unfilled and filtered dataset I see the distribution of low
 intensity features is cut. (question: Should I keep the original assay
 (assay(res)\$raw) without gapfilling? median scaling? noise threshold?)
@@ -959,8 +1047,8 @@ grid()
 
 It is also interesting to see how intensities changes across the retention time.
 
-NOTE: How can i include xlab  with title = "retention time."
-NOTE: Include the m/z charge across the rt. would it look like ion map?
+NOTE: How can i include xlab with title = "retention time." NOTE: Include the
+m/z charge across the rt. would it look like ion map?
 
 # DIFFERENCIAL ABUNDANCE ANALYSIS (lm)
 
@@ -997,9 +1085,9 @@ pca_sample_adj <- autoplot(pca_res_norm, data = vals_st,
 grid.arrange(pca_sample_adj, ncol = 1)
 ```
 
-For our analysis we use a linear model y ~ device + sex + participant, hence
+For our analysis we use a linear model y \~ device + sex + participant, hence
 explaining the abundances of one metabolite accounting for the study group
-assignment and sex of each individual. 
+assignment and sex of each individual.
 
 ## Plasma vs devices
 
@@ -1109,10 +1197,13 @@ hist(rowData(res)$adjp.S, breaks = 64, xlab = expression(p[BH]~value),
      cex.main = 1, cex.lab = 1, cex.axis = 1)
 ```
 
-Histograms shows high percentage of features present a very low p-value, obtaining around 2000 significant features (~1500 in Blood). This could be because of the matrix difference between blood samples and plasma samples. 
+Histograms shows high percentage of features present a very low p-value,
+obtaining around 2000 significant features (\~1500 in Blood). This could be
+because of the matrix difference between blood samples and plasma samples.
 
-Below p-value are ploted against the log2 fold change of (average) abundances in a Volcano plot. This volcano plot will allow us to visualize the features that are significantly different between the two study groups. 
-
+Below p-value are ploted against the log2 fold change of (average) abundances in
+a Volcano plot. This volcano plot will allow us to visualize the features that
+are significantly different between the two study groups.
 
 ### Volcano plot
 
@@ -1189,13 +1280,14 @@ if (any(rowData(res)$significant.S)) {
 }
 ```
 
-The interesting features would be on top corners of the volcano plot. However, high amount of features seems to be significant in both groups.  
+The interesting features would be on top corners of the volcano plot. However,
+high amount of features seems to be significant in both groups.\
 There features are listed, along with their average difference in log(2)
 abundance between the compared groups, their adjusted p-value, their average
 (log2) abundance in each sample group and their RSD in QC samples in the table
 bellow.
 
-NOTE: modify table adding columns from p-value in each device. 
+NOTE: modify table adding columns from p-value in each device.
 
 ```{r significant-features-plasma}
 # Table of significant features in all groups
@@ -1205,11 +1297,14 @@ tab <- rowData(res)[rowData(res)$significant.W,
     as.data.frame()
 tab <- tab[order(abs(tab$coef.W), decreasing = TRUE), ]
 kable(tab, format = "pipe")
+
 ```
 
-Below we visualise the EICs of the significant features to evaluate their signal. We restrict the MS data set to study samples. Parameters: 
-- keepFeatures = TRUE: ensures that identified features are retained in the subset object.
-- peakBg: defines the (background) color for each individual chromatographic peak in the EIC object.
+Below we visualise the EICs of the significant features to evaluate their
+signal. We restrict the MS data set to study samples. Parameters: - keepFeatures
+= TRUE: ensures that identified features are retained in the subset object. -
+peakBg: defines the (background) color for each individual chromatographic peak
+in the EIC object.
 
 ```{r eval=FALSE}
 #FIX
@@ -1232,7 +1327,8 @@ dev.off()  # Closes any active plotting devices
 # save("lcms1_study.RData")
 ```
 
-NOTE: fix. Error in plot.new() : figure margins too large. Is it related with number of significant features?
+NOTE: fix. Error in plot.new() : figure margins too large. Is it related with
+number of significant features?
 
 In order to export the res object to perform the annotation in a different file,
 I save it as res_sign_fts.
@@ -1245,7 +1341,11 @@ save(res_sign_fts, file = "res_sign_fts.RData")
 
 ## Blood vs devices
 
-since microsampling devices contains whole blood samples, it is useful to include whole blood as a reference group when comparing microsampling devices. By suing whole blood as the "intercept" in the linear model, we cab assess how each microsampling device (Whatman, Capitainer, Mitra) differs in terms of significant features or detection performance relative to traditional sampling. 
+since microsampling devices contains whole blood samples, it is useful to
+include whole blood as a reference group when comparing microsampling devices.
+By suing whole blood as the "intercept" in the linear model, we cab assess how
+each microsampling device (Whatman, Capitainer, Mitra) differs in terms of
+significant features or detection performance relative to traditional sampling.
 
 ### Linear model
 
@@ -1437,7 +1537,7 @@ bellow.
 
 ## Whatman vs Mitra
 
-I also try to compare between devices as an example: 
+I also try to compare between devices as an example:
 
 ### Linear model
 
@@ -1560,6 +1660,7 @@ if (any(rowData(res)$significant.S)) {
 }
 ```
 
-The comparison between plasma vs devices and blood vs devices, look the same. The number of significant features seems to be quite high taking into account that there are from same patients. Is there any error in the code? Are we overfitting the lm?
-
-
+The comparison between plasma vs devices and blood vs devices, look the same.
+The number of significant features seems to be quite high taking into account
+that there are from same patients. Is there any error in the code? Are we
+overfitting the lm?

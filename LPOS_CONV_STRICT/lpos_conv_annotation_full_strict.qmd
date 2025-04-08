@@ -291,12 +291,13 @@ sampleData(lcms2)$fragmentation_mode <- c("001", "002", "003", "004")
 #' Subset only samples with mz range form 50-1200Da. 
 idx_mzrange <- sampleData(lcms2)$fragmentation_mode =="004"
 lcms2_004 <- lcms2[idx_mzrange]
+
 #let's look at the updated sample data
 sampleData(lcms2_004)
 colnames(sampleData(lcms2_004)) 
 sampleData(lcms2_004) |> kable (format = "pipe")
 ```
-
+MS2 Data is filtered to the same RT range as LC-MS run to clean unnecessary peaks that will not be intered
 ```{r}
 #' Filter the data to the same RT range as the LC-MS run
 lcms2_004 <- filterRt(lcms2_004, c(60, 700))
@@ -311,52 +312,111 @@ spectra(lcms2_004) |>
     lapply(table) |>
     do.call(what = cbind)
 ```
-
 In the plot below we can observe the different mz ranges in each sample measurement. This was performed using the QC sample. 
+
 ```{r}
-#|fig: Figure XX. Precursor ions in the LC-MS/MS data set.
-par(mar = c(4, 4, 2, 4))
-plotPrecursorIons(lcms2_004[1:7,])
-grid()
+#|fig: "Figure XX. Precursor ions in the LC-MS/MS data set."
+# par(mar = c(4, 4, 2, 4))
+par (mfrow = c(7, 1), mar = c(2, 2.5, 2, 4))
+plotPrecursorIons(lcms2_004, cex = 0.2)
+grid() 
 ```
-we observed a high amount of low mass molecules and few high mass molecules. 
+NOTE: replot with the rest of samples? If I plot all samples it looks really small and data cannot be visualise properly. Title is the same for all samples?
+We observed a high amount of low mass molecules and few high mass molecules. 
 
 We next extract the Spectra object with the MS data from the data object and assign a new spectra variable with the employed collision energy, which we extract from the data object sampleData.
 
+For the next steps MS data is filtered by: 
+- restricting MS2 spectra 
+- removing mass peaks from each spectrum with an intensity that is lower than 5% of the highest intensity for that spectrum, assuming that these very low intensity peaks represent background signal.
+- removing also mass peaks with an m/z value greater or equal to the precursor m/z of the ion. This puts, for the later matching against reference spectra, more weight on the fragmentation pattern of ions and avoids hits based only on the precursor m/z peak (and hence a similar mass of the compared compounds). 
+- restricting the data to spectra with at least two fragment peaks and scale their intensities such that their sum is 1 for each spectrum.
+
+While similarity calculations are not affected by this scaling, it makes visual comparison of fragment spectra easier to read.
+
 ```{r}
+#' extract spectra object
 ms2_ctr <- spectra(lcms2_004)
-```
 
-CONTINUE FROM HERE
-
-Next: 
-- restrict MS2 spectra
-- remove mass peaks from each spectrum with an intensity that is lower than 5% of the highest intensity for that spectrum, assuming that these very low intensity peaks represent background signal
-(????)
-NOTE: Sometimes the fragmentation can make the parent ion disappear. How can we make sure those ions will not disappear???
-
-We next remove also mass peaks with an m/z value greater or equal to the precursor m/z of the ion. This puts, for the later matching against reference spectra, more weight on the fragmentation pattern of ions and avoids hits based only on the precursor m/z peak (and hence a similar mass of the compared compounds). At last, we restrict the data to spectra with at least two fragment peaks and scale their intensities such that their sum is 1 for each spectrum. While similarity calculations are not affected by this scaling, it makes visual comparison of fragment spectra easier to read.
-```{r}
 #' Remove low intensity peaks
 low_int <- function(x, ...) {
     x > max(x, na.rm = TRUE) * 0.05
 }
-
 ms2_ctr <- filterMsLevel(ms2_ctr, 2L) |>
-    filterIntensity(intensity = low_int) # NOTE: why 2L only?
+    filterIntensity(intensity = low_int) 
 
+# NOTE: 2L is MS2data only?
 #' Remove precursor peaks and restrict to spectra with a minimum number of peaks
-
 ms2_ctr <- filterPrecursorPeaks(ms2_ctr, ppm = 50, mz = ">=")
 ms2_ctr <- ms2_ctr[lengths(ms2_ctr) > 1] |>
     scalePeaks()
 ```
-NOTE: I didn't do the step of loading the full MS data into memory. Is this only applicable with MetaboLight data sets?
+NOTE: back end is only for data from Metabolight?
+
+The goal of the workflow is to *identify the MS2 spectra* from the second (LC-MS/MS) run that could represent fragments of the ions of features from the data in the first (LC-MS) run. 
+
+Our approach is to match MS2 spectra against the *significant features* determined earlier based on their precursor m/z and retention time (given an acceptable tolerance) to the feature’s m/z and retention time. This can be easily done using the featureArea() function that effectively considers the *actual m/z and retention time ranges of the features’ chromatographic peaks* and therefore increase the chance of finding a correct match. 
+This, however, also assumes that retention times between the first and second run don’t differ by much. Alternatively, we would need to align the retention times of the second LC-MS/MS data set to those of the first.
 
 ```{r}
+#' Define the m/z and retention time ranges for the significant features
+target <- featureArea(lcms1)[rownames(res_sig_W), ]
+target
+
+```
+We next *identify the fragment spectra* with their precursor m/z and retention times within these ranges. We use the filterRanges() function that allows to filter a Spectra object using multiple ranges simultaneously. We apply this function separately to each feature (row in the above matrix) to extract the MS2 spectra representing fragmentation information of the presumed feature’s ions.
+
+```{r}
+#' Identify for each feature MS2 spectra with their precursor m/z and
+#' retention time within the feature's m/z and retention time range
+ms2_ctr_fts <- apply(target[, c("rtmin", "rtmax", "mzmin", "mzmax")],
+                     MARGIN = 1, FUN = filterRanges, object = ms2_ctr,
+                     spectraVariables = c("rtime", "precursorMz"))
+lengths(ms2_ctr_fts)
+# test<- ms2_ctr_fts[lengths(ms2_ctr_fts) > 0]
+# lengths(test)
+```
+The result from this apply() call is a list of Spectra, each element representing the result for one feature. With the exception of the last feature, multiple MS2 spectra could be identified. We next combine the list of Spectra into a single Spectra object using the concatenateSpectra() function and add an additional spectra variable containing the respective feature identifier.
+
+```{r}
+l <- lengths(ms2_ctr_fts)
+#' Combine the individual Spectra objects
+ms2_ctr_fts <- concatenateSpectra(ms2_ctr_fts) 
+#' fix error: Error in .concatenate_spectra(unlist(unname(list(unname(x), ...)))) :  Can not  concatenate 'Spectra' objects with non-empty processing queue. Consider calling 'applyProcessing' before.
+
+#' Assign the feature identifier to each MS2 spectrum
+ms2_ctr_fts$feature_id <- rep(rownames(res_sig), l)
+
+## Save for reuse in other vignettes
+save(ms2_ctr_fts, file = "objects/spectra_significant_fts.RData")
 
 ```
 
+We next build our reference data which we need to process the same way as our query spectra. We extract all fragment spectra from the MassBank database, restrict to positive polarity data (since our experiment was acquired in positive polarity) and perform the same processing to the fragment spectra from the MassBank database.
+
+NOTE: does MassBank containe LPOS annotations? wichi dataset do I need to load?
+
+```{r}
+#' load reference data
+ah <- AnnotationHub()
+
+#' List available MassBank data sets
+query(ah, "MassBank")
+```
+```{r}
+#' Load one MassBank release: choose last release. 
+mb <- ah[["AH119519"]]
+
+ms2_ref <- Spectra(mb) |>
+    filterPolarity(1L) |>
+    filterIntensity(intensity = low_int) |>
+    filterPrecursorPeaks(ppm = 50, mz = ">=")
+ms2_ref <- ms2_ref[lengths(ms2_ref) > 1] |>
+    scalePeaks()
+```
+I cannot continue with the concatenate function error. 
+
+...
 
 
 
