@@ -520,7 +520,7 @@ legend("topright", col = colors,
 
 
 ```
-
+By only plotting the QCs we can visualise the effect of normalisation based on QC samples are centered around 0. 
 ### CV after normalisation
 
 ```{r CV-after-norm}
@@ -1044,11 +1044,10 @@ axis(1, at = 1:length(int), las = 2, cex.axis = 0.8)
 mtext("Retention time (s)", side = 1, line = 4, cex = 1)
 grid()
 ```
+The number of features across the rt is similar between the devices. However, blood and plasma present less number of features in a between 3-6 min and 8-10 (aproximately). These are areas of chromatogram that do not match with specific biological lipids groups, so we will expect differences in contaminants features. In general, in the regions where we found biological features plasma and blood present less intensity than the devices.  
 
-It is also interesting to see how intensities changes across the retention time.
-
-NOTE: How can i include xlab with title = "retention time." NOTE: Include the
-m/z charge across the rt. would it look like ion map?
+NOTE: How can i include xlab with title = "retention time." 
+NOTE: Include the m/z charge across the rt. would it look like ion map?
 
 # DIFFERENCIAL ABUNDANCE ANALYSIS (lm)
 
@@ -1085,7 +1084,7 @@ pca_sample_adj <- autoplot(pca_res_norm, data = vals_st,
 grid.arrange(pca_sample_adj, ncol = 1)
 ```
 
-For our analysis we use a linear model y \~ device + sex + participant, hence
+For our analysis we use a linear model y ~ device + sex + participant, hence
 explaining the abundances of one metabolite accounting for the study group
 assignment and sex of each individual.
 
@@ -1099,12 +1098,11 @@ p.cut <- 0.05     # cut-off for significance.
 m.cut <- 0.5      # cut-off for log2 fold change
 
 # The algorithm takes the first group as reference, so levels must be changed: 
-levels(res$device) <- c("PLASMA", "WHATMAN", "MITRA", "CAPITAINER", "BLOOD")
+# levels(res$device) <- c("PLASMA", "WHATMAN", "MITRA", "CAPITAINER", "BLOOD")
 
 #' Define the linear model to be applied to the data
-device <- factor(x = res$device, levels = levels(res$device))
+device <- factor(x = res$device, levels =  c("PLASMA", "WHATMAN", "MITRA", "CAPITAINER", "BLOOD"))
 sex <- res$sex
-participants <- factor(res$participants)
 # design <- model.matrix(~ device + sex + participants)
 # As there are NA values in one of the participants we need to continue without participants. 
 
@@ -1125,19 +1123,32 @@ tmp <- data.frame(
     coef.W = fit$coefficients[, "deviceWHATMAN"],
     pvalue.W = fit$p.value[, "deviceWHATMAN"],
     adjp.W = p.adjust(fit$p.value[, "deviceWHATMAN"], method = "BH"), # Benjamini-Hochberg correction
+    avg.W = rowMeans(
+        log2(assay(res, "norm_imputed")[,res$device == "WHATMAN"])),
+    avg.P = rowMeans(
+        log2(assay(res, "norm_imputed")[,res$device == "PLASMA"])), 
     coef.M = fit$coefficients[, "deviceMITRA"],
     pvalue.M = fit$p.value[, "deviceMITRA"],
-    adjp.M= p.adjust(fit$p.value[, "deviceMITRA"], method = "BH"), # Benjamini-Hochberg correction    
+    adjp.M = p.adjust(fit$p.value[, "deviceMITRA"], method = "BH"), # Benjamini-Hochberg correction
+    avg.M = rowMeans(
+        log2(assay(res, "norm_imputed")[,res$device == "MITRA"])),
     coef.C = fit$coefficients[, "deviceCAPITAINER"],
     pvalue.C = fit$p.value[, "deviceCAPITAINER"],
     adjp.C = p.adjust(fit$p.value[, "deviceCAPITAINER"], method = "BH"), # Benjamini-Hochberg correction 
+    avg.C = rowMeans(
+        log2(assay(res, "norm_imputed")[,res$device == "CAPITAINER"])),
     coef.B = fit$coefficients[, "deviceBLOOD"],
     pvalue.B = fit$p.value[, "deviceBLOOD"],
     adjp.B = p.adjust(fit$p.value[, "deviceBLOOD"], method = "BH"), # Benjamini-Hochberg correction
+    avg.B = rowMeans(
+        log2(assay(res, "norm_imputed")[,res$device == "BLOOD"])),
     coef.S = fit$coefficients[, "sexW"],
     pvalue.S = fit$p.value[, "sexW"],
-    adjp.S = p.adjust(fit$p.value[, "sexW"], method = "BH") # Benjamini-Hochberg correction
+    adjp.S = p.adjust(fit$p.value[, "sexW"], method = "BH"), # Benjamini-Hochberg correction
+    avg.S = rowMeans(
+        log2(assay(res, "norm_imputed")[,res$device == "SEX"]))
 )
+
 tmp$significant.W <- tmp$adjp.W < 0.05
 tmp$significant.M <- tmp$adjp.M < 0.05
 tmp$significant.C <- tmp$adjp.C < 0.05
@@ -1188,6 +1199,7 @@ hist(rowData(res)$adjp.B, breaks = 64, xlab = expression(p[BH]~value),
      main = "Distribution of adjusted p-values - Blood",
      cex.main = 1, cex.lab = 1, cex.axis = 1)
 
+#' Plot the distribution of p-values in Sex
 par(mfrow = c(1, 2))
 hist(rowData(res)$pvalue.S, breaks = 64, xlab = "p value",
      main = "Distribution of raw p-values - Sex",
@@ -1213,7 +1225,7 @@ par(mfrow = c(1, 1), mar = c(5, 5, 5, 1))
 plot(rowData(res)$coef.W, -log10(rowData(res)$adjp.W),
      xlab = expression(log[2]~difference),
      ylab = expression(-log[10]~p[BH]), pch = 16, col = "#00000060",
-     main = "Volcano Plot - Whatman",
+     main = "Volcano Plot - Plasma vs Whatman",
      cex.main = 1.5, cex.lab = 1.5, cex.axis = 1.3)
 grid()
 abline(h = -log10(0.05), col = "#0000ffcc")
@@ -1227,7 +1239,7 @@ par(mfrow = c(1, 1), mar = c(5, 5, 5, 1))
 plot(rowData(res)$coef.M, -log10(rowData(res)$adjp.M),
      xlab = expression(log[2]~difference),
      ylab = expression(-log[10]~p[BH]), pch = 16, col = "#00000060",
-     main = "Volcano Plot - Mitra",
+     main = "Volcano Plot - Plasma vs Mitra",
      cex.main = 1.5, cex.lab = 1.5, cex.axis = 1.3)
 grid()
 abline(h = -log10(0.05), col = "#0000ffcc")
@@ -1241,7 +1253,7 @@ par(mfrow = c(1, 1), mar = c(5, 5, 5, 1))
 plot(rowData(res)$coef.C, -log10(rowData(res)$adjp.C),
      xlab = expression(log[2]~difference),
      ylab = expression(-log[10]~p[BH]), pch = 16, col = "#00000060",
-     main = "Volcano Plot - Capitainer",
+     main = "Volcano Plot - Plasma vs Capitainer",
      cex.main = 1.5, cex.lab = 1.5, cex.axis = 1.3)
 grid()
 abline(h = -log10(0.05), col = "#0000ffcc")
@@ -1255,7 +1267,7 @@ par(mfrow = c(1, 1), mar = c(5, 5, 5, 1))
 plot(rowData(res)$coef.B, -log10(rowData(res)$adjp.B),
      xlab = expression(log[2]~difference),
      ylab = expression(-log[10]~p[BH]), pch = 16, col = "#00000060",
-     main = "Volcano Plot - Blood",
+     main = "Volcano Plot - Plasma vs Blood",
      cex.main = 1.5, cex.lab = 1.5, cex.axis = 1.3)
 grid()
 abline(h = -log10(0.05), col = "#0000ffcc")
@@ -1264,7 +1276,7 @@ if (any(rowData(res)$significant.B)) {
            -log10(rowData(res)$adjp.B[rowData(res)$significant.B]),
            col = "#0000ffcc")
 }
-#' Plot volcano plot of the statistical results - Blood
+#' Plot volcano plot of the statistical results - sex
 par(mfrow = c(1, 1), mar = c(5, 5, 5, 1))
 plot(rowData(res)$coef.S, -log10(rowData(res)$adjp.S),
      xlab = expression(log[2]~difference),
@@ -1289,15 +1301,21 @@ bellow.
 
 NOTE: modify table adding columns from p-value in each device.
 
+### Table of signigicant features
+
 ```{r significant-features-plasma}
 # Table of significant features in all groups
 tab <- rowData(res)[rowData(res)$significant.W,
                     c("mzmed", "rtmed", 
-                      "coef.W","pvalue.W","adjp.W")] |>
+                      "coef.W","pvalue.W","adjp.W", "avg.W",
+                      "avg.P", "avg.M","avg.C", "avg.B", "avg.S",
+                      "coef.M","pvalue.M","adjp.M",
+                      "coef.C","pvalue.C","adjp.C", 
+                      "coef.B","pvalue.B","adjp.B", 
+                      "coef.S","pvalue.S","adjp.S")] |>
     as.data.frame()
 tab <- tab[order(abs(tab$coef.W), decreasing = TRUE), ]
 kable(tab, format = "pipe")
-
 ```
 
 Below we visualise the EICs of the significant features to evaluate their
@@ -1314,14 +1332,14 @@ lcms1_study <- lcms1[!idx_blank_qc, keepFeatures = TRUE]
 # save("lcms1_study.RData")
 
 #' Extract EICs for the significant features
-eic_sign <- featureChromatograms(
-    lcms1_study, features = rownames(tab), expandRt = 5, filled = TRUE)
-
+eic_sign_test <- featureChromatograms(
+    lcms1_study, features = "FT1714", expandRt = 5, filled = TRUE, chunksize = 4)
+# PLOT ONLY ONE FEATURE TO CHECK
 #' Plot the EICs.
 par(mar = c(4, 4, 2, 1))  # Adjust bottom, left, top, right margins
-plot(eic_sign, col = col_sample,
-     peakBg = paste0(col_sample[chromPeaks(eic_sign)[, "sample"]], 60))
-legend("topright", col = col_phenotype, legend = names(col_phenotype), lty = 1)
+plot(eic_sign_test, col = col_sample,
+     peakBg = paste0(col_sample[chromPeaks(eic_sign_test)[, "sample"]], 60))
+legend("topright", col = col_sample, legend = names(col_sample), lty = 1)
 dev.off()  # Closes any active plotting devices
 
 # save("lcms1_study.RData")
@@ -1335,8 +1353,142 @@ I save it as res_sign_fts.
 
 ```{r res-save}
 # Save res object
-res_sign_fts <- res
-save(res_sign_fts, file = "res_sign_fts.RData")
+res_sts <- res
+save(res_sts, file = "res_sts.RData")
+```
+
+#### Comparison with linear model participants
+
+##### Linear Model with participants
+
+The same way we compared in a linear model all the devices adn references samples taking into account the sex variable, now we include participants as a cofactor. In that case, Limma is returning NA value for the 10th participant and giving error, but for the rest, I will compare the coef.W and -log10 pvalue using both models.  
+
+
+```{r lm-participants}
+#' Define the linear model to be applied to the data
+p.cut <- 0.05     # cut-off for significance.
+m.cut <- 0.5      # cut-off for log2 fold change
+
+#' Define the linear model to be applied to the data using participants as a factor
+device <- factor(x = res$device, levels =  c("PLASMA", "WHATMAN", "MITRA", "CAPITAINER", "BLOOD"))
+sex <- res$sex
+participants <- factor(res$participants)
+design_part <- model.matrix(~ device + sex + participants)
+
+#' Fit the linear model to the data, explaining metabolite
+#' concentrations by device and sex.
+fit_part <- lmFit(log2(assay(res, "norm_imputed")), design = design_part) # fit model to log2-transformed abundances
+fit_part <- eBayes(fit_part) # calculate p-value
+fit_part
+```
+
+```{r result-df-participants}
+#' Compile a result data frame. 
+
+tmp_part <- data.frame(
+    coef.W.p = fit_part$coefficients[, "deviceWHATMAN"],
+    pvalue.W.p = fit_part$p.value[, "deviceWHATMAN"],
+    adjp.W.p = p.adjust(fit_part$p.value[, "deviceWHATMAN"], method = "BH"), # Benjamini-Hochberg correction
+    avg.W.p = rowMeans(
+        log2(assay(res, "norm_imputed")[,res$device == "WHATMAN"])),
+    avg.P.p = rowMeans(
+        log2(assay(res, "norm_imputed")[,res$device == "PLASMA"])), 
+    coef.M.p = fit_part$coefficients[, "deviceMITRA"],
+    pvalue.M.p = fit_part$p.value[, "deviceMITRA"],
+    adjp.M.p = p.adjust(fit_part$p.value[, "deviceMITRA"], method = "BH"), # Benjamini-Hochberg correction
+    avg.M.p = rowMeans(
+        log2(assay(res, "norm_imputed")[,res$device == "MITRA"])),
+    coef.C.p = fit_part$coefficients[, "deviceCAPITAINER"],
+    pvalue.C.p = fit_part$p.value[, "deviceCAPITAINER"],
+    adjp.C.p = p.adjust(fit_part$p.value[, "deviceCAPITAINER"], method = "BH"), # Benjamini-Hochberg correction 
+    avg.C.p = rowMeans(
+        log2(assay(res, "norm_imputed")[,res$device == "CAPITAINER"])),
+    coef.B.p = fit_part$coefficients[, "deviceBLOOD"],
+    pvalue.B.p = fit_part$p.value[, "deviceBLOOD"],
+    adjp.B.p = p.adjust(fit_part$p.value[, "deviceBLOOD"], method = "BH"), # Benjamini-Hochberg correction
+    avg.B.p = rowMeans(
+        log2(assay(res, "norm_imputed")[,res$device == "BLOOD"])),
+    coef.S.p = fit_part$coefficients[, "sexW"],
+    pvalue.S.p = fit_part$p.value[, "sexW"],
+    adjp.S.p = p.adjust(fit_part$p.value[, "sexW"], method = "BH"), # Benjamini-Hochberg correction
+    avg.S.p = rowMeans(
+        log2(assay(res, "norm_imputed")[,res$device == "SEX"]))
+)
+
+tmp_part$significant.W.p <- tmp_part$adjp.W.p < 0.05
+tmp_part$significant.M.p <- tmp_part$adjp.M.p < 0.05
+tmp_part$significant.C.p <- tmp_part$adjp.C.p < 0.05
+tmp_part$significant.B.p <- tmp_part$adjp.B.p < 0.05
+tmp_part$significant.S.p <- tmp_part$adjp.S.p < 0.05
+#' Add differential abundance results to the object's rowData
+rowData(res) <- cbind(rowData(res), tmp_part)
+```
+
+
+##### Plot Coef values with and without participant factor
+
+```{r}
+# Comparison of Coef in WHATMAN between two models. 
+
+#' Plot the values against each other (in log2 scale)
+plot(rowData(res)$coef.W, rowData(res)$coef.W.p,
+     xlim = range(c(rowData(res)$coef.W, rowData(res)$coef.W.p)),
+     ylim = range(c(rowData(res)$coef.W, rowData(res)$coef.W.p)), 
+     pch = 21, bg = "#00000020", col = "#00000080",  
+     xlab = "y~ device + sex",
+     ylab = "y~ device + sex + participants", 
+     main = "Whatman Coeficients comparison"
+     )
+grid()
+abline(0, 1)
+```
+
+```{r}
+# Comparison of Coef in MITRA between two models. 
+
+#' Plot the values against each other (in log2 scale)
+plot(rowData(res)$coef.M, rowData(res)$coef.M.p,
+     xlim = range(c(rowData(res)$coef.M, rowData(res)$coef.M.p)),
+     ylim = range(c(rowData(res)$coef.M, rowData(res)$coef.M.p)), 
+     pch = 21, bg = "#00000020", col = "#00000080",  
+     xlab = "y~ device + sex",
+     ylab = "y~ device + sex + participants", 
+     main = "Mitra Coeficients comparison"
+     )
+grid()
+abline(0, 1)
+```
+
+```{r}
+# Comparison of Coef in CAPITAINER between two models. 
+
+#' Plot the values against each other (in log2 scale)
+plot(rowData(res)$coef.C, rowData(res)$coef.C.p,
+     xlim = range(c(rowData(res)$coef.C, rowData(res)$coef.C.p)),
+     ylim = range(c(rowData(res)$coef.C, rowData(res)$coef.C.p)), 
+     pch = 21, bg = "#00000020", col = "#00000080",  
+     xlab = "y~ device + sex",
+     ylab = "y~ device + sex + participants", 
+     main = "Capitainer Coeficients comparison"
+     )
+grid()
+abline(0, 1)
+```
+
+```{r}
+# Comparison of Coef in BLOOD between two models. 
+
+#' Plot the values against each other (in log2 scale)
+plot(rowData(res)$coef.B, rowData(res)$coef.B.p,
+     xlim = range(c(rowData(res)$coef.B, rowData(res)$coef.B.p)),
+     ylim = range(c(rowData(res)$coef.B, rowData(res)$coef.B.p)), 
+     pch = 21, bg = "#00000020", col = "#00000080",  
+     xlab = "y~ device + sex",
+     ylab = "y~ device + sex + participants", 
+     main = "Blood Coeficients comparison"
+     )
+grid()
+abline(0, 1)
 ```
 
 ## Blood vs devices
@@ -1354,15 +1506,12 @@ significant features or detection performance relative to traditional sampling.
 p.cut <- 0.05     # cut-off for significance.
 m.cut <- 0.5      # cut-off for log2 fold change
 # The algorithm takes the first group as reference, so levels must be changed: 
-levels(res$device) <- c("BLOOD", "WHATMAN", "MITRA", "CAPITAINER", "PLASMA")
 
 #' Define the linear model to be applied to the data
-device <- factor(x = res$device, levels = levels(res$device))
+device <- factor(x = res$device, levels = c("BLOOD", "WHATMAN", "MITRA", "CAPITAINER", "PLASMA"))
 sex <- res$sex
-participants <- factor(res$participants)
 # design <- model.matrix(~ device + sex + participants)
 # As there are NA values in one of the participants we need to continue without participants. 
-
 design <- model.matrix(~ device + sex)
 
 #' Fit the linear model to the data, explaining metabolite
@@ -1379,25 +1528,32 @@ Extract the results:
 tmp_B <- data.frame(
     coef.W = fit_B$coefficients[, "deviceWHATMAN"],
     pvalue.W = fit_B$p.value[, "deviceWHATMAN"],
-    adjp.W = p.adjust(fit_B$p.value[, "deviceWHATMAN"], method = "BH"), # Benjamini-Hochberg correction
+    adjp.W = p.adjust(fit_B$p.value[, "deviceWHATMAN"], method = "BH"), # Benjamini-Hochberg correction  
+    avg.W = rowMeans(
+        log2(assay(res, "norm_imputed")[,res$device == "WHATMAN"])),
+    avg.B = rowMeans(
+        log2(assay(res, "norm_imputed")[,res$device == "BLOOD"])),
     coef.M = fit_B$coefficients[, "deviceMITRA"],
     pvalue.M = fit_B$p.value[, "deviceMITRA"],
-    adjp.M= p.adjust(fit_B$p.value[, "deviceMITRA"], method = "BH"), # Benjamini-Hochberg correction    
+    adjp.M= p.adjust(fit_B$p.value[, "deviceMITRA"], method = "BH"), # Benjamini-Hochberg correction   
+    avg.M = rowMeans(
+        log2(assay(res, "norm_imputed")[,res$device == "MITRA"])),
     coef.C = fit_B$coefficients[, "deviceCAPITAINER"],
     pvalue.C = fit_B$p.value[, "deviceCAPITAINER"],
     adjp.C = p.adjust(fit_B$p.value[, "deviceCAPITAINER"], method = "BH"), # Benjamini-Hochberg correction 
-    # coef.P = fit_B$coefficients[, "devicePLASMA"],
-    # pvalue.P = fit_B$p.value[, "devicePLASMA"],
-    # adjp.P = p.adjust(fit_B$p.value[, "devicePLASMA"], method = "BH"), # Benjamini-Hochberg correction
+    avg.C = rowMeans(
+        log2(assay(res, "norm_imputed")[,res$device == "CAPITAINER"])),
     coef.S = fit_B$coefficients[, "sexW"],
     pvalue.S = fit_B$p.value[, "sexW"],
-    adjp.S = p.adjust(fit_B$p.value[, "sexW"], method = "BH") # Benjamini-Hochberg correction
+    adjp.S = p.adjust(fit_B$p.value[, "sexW"], method = "BH"), # Benjamini-Hochberg correction
+    avg.S = rowMeans(
+        log2(assay(res, "norm_imputed")[,res$device == "SEX"]))
 )
 tmp$significant.W <- tmp_B$adjp.W < 0.05
 tmp$significant.M <- tmp_B$adjp.M < 0.05
 tmp$significant.C <- tmp_B$adjp.C < 0.05
-# tmp$significant.P <- tmp_B$adjp.P < 0.05
 tmp$significant.S <- tmp_B$adjp.S < 0.05
+
 #' Add differential abundance results to the object's rowData
 rowData(res) <- cbind(rowData(res), tmp_B)
 ```
@@ -1434,15 +1590,7 @@ hist(rowData(res)$adjp.C, breaks = 64, xlab = expression(p[BH]~value),
      main = "Distribution of adjusted p-values - Capitainer",
      cex.main = 1, cex.lab = 1, cex.axis = 1)
 
-#' Plot the distribution of p-values in Plasma
-# par(mfrow = c(1, 2))
-# hist(rowData(res)$pvalue.P, breaks = 64, xlab = "p value",
-#      main = "Distribution of raw p-values - Plasma",
-#      cex.main = 1, cex.lab = 1, cex.axis = 1)
-# hist(rowData(res)$adjp.P, breaks = 64, xlab = expression(p[BH]~value),
-#      main = "Distribution of adjusted p-values - Plasma",
-#      cex.main = 1, cex.lab = 1, cex.axis = 1)
-
+#' Plot the distribution of p-values in Sex
 par(mfrow = c(1, 2))
 hist(rowData(res)$pvalue.S, breaks = 64, xlab = "p value",
      main = "Distribution of raw p-values - Sex",
@@ -1460,7 +1608,7 @@ par(mfrow = c(1, 1), mar = c(5, 5, 5, 1))
 plot(rowData(res)$coef.W, -log10(rowData(res)$adjp.W),
      xlab = expression(log[2]~difference),
      ylab = expression(-log[10]~p[BH]), pch = 16, col = "#00000060",
-     main = "Volcano Plot - Whatman",
+     main = "Volcano Plot - Blood vs Whatman",
      cex.main = 1.5, cex.lab = 1.5, cex.axis = 1.3)
 grid()
 abline(h = -log10(0.05), col = "#EB7F2C")
@@ -1474,7 +1622,7 @@ par(mfrow = c(1, 1), mar = c(5, 5, 5, 1))
 plot(rowData(res)$coef.M, -log10(rowData(res)$adjp.M),
      xlab = expression(log[2]~difference),
      ylab = expression(-log[10]~p[BH]), pch = 16, col = "#00000060",
-     main = "Volcano Plot - Mitra",
+     main = "Volcano Plot - Blood vs Mitra",
      cex.main = 1.5, cex.lab = 1.5, cex.axis = 1.3)
 grid()
 abline(h = -log10(0.05), col = "#EB7F2C")
@@ -1488,7 +1636,7 @@ par(mfrow = c(1, 1), mar = c(5, 5, 5, 1))
 plot(rowData(res)$coef.C, -log10(rowData(res)$adjp.C),
      xlab = expression(log[2]~difference),
      ylab = expression(-log[10]~p[BH]), pch = 16, col = "#00000060",
-     main = "Volcano Plot - Capitainer",
+     main = "Volcano Plot - Blood vs Capitainer",
      cex.main = 1.5, cex.lab = 1.5, cex.axis = 1.3)
 grid()
 abline(h = -log10(0.05), col = "#EB7F2C")
@@ -1497,21 +1645,8 @@ if (any(rowData(res)$significant.C)) {
            -log10(rowData(res)$adjp.C[rowData(res)$significant.C]),
            col = "#EB7F2C")
 }
-#' Plot volcano plot of the statistical results - Plasma
-# par(mfrow = c(1, 1), mar = c(5, 5, 5, 1))
-# plot(rowData(res)$coef.P, -log10(rowData(res)$adjp.P),
-#      xlab = expression(log[2]~difference),
-#      ylab = expression(-log[10]~p[BH]), pch = 16, col = "#00000060",
-#      main = "Volcano Plot - Plasma",
-#      cex.main = 1.5, cex.lab = 1.5, cex.axis = 1.3)
-# grid()
-# abline(h = -log10(0.05), col = "#EB7F2C")
-# if (any(rowData(res)$significant.P)) {
-#     points(rowData(res)$coef.P[rowData(res)$significant.P],
-#            -log10(rowData(res)$adjp.P[rowData(res)$significant.P]),
-#            col = "#EB7F2C")
-# }
-#' Plot volcano plot of the statistical results - Blood
+
+#' Plot volcano plot of the statistical results - Sex
 par(mfrow = c(1, 1), mar = c(5, 5, 5, 1))
 plot(rowData(res)$coef.S, -log10(rowData(res)$adjp.S),
      xlab = expression(log[2]~difference),
@@ -1535,6 +1670,22 @@ abundance between the compared groups, their adjusted p-value, their average
 (log2) abundance in each sample group and their RSD in QC samples in the table
 bellow.
 
+### Table of signigicant features
+
+```{r significant-features-plasma}
+# Table of significant features in all groups
+tab_B <- rowData(res)[rowData(res)$significant.W,
+                    c("mzmed", "rtmed", 
+                      "coef.W","pvalue.W","adjp.W", "avg.W",
+                      "avg.B", "avg.M","avg.C", "avg.S",
+                      "coef.M","pvalue.M","adjp.M",
+                      "coef.C","pvalue.C","adjp.C", 
+                      "coef.S","pvalue.S","adjp.S")] |>
+    as.data.frame()
+tab_B <- tab_B[order(abs(tab_B$coef.W), decreasing = TRUE), ]
+kable(tab_B, format = "pipe")
+```
+
 ## Whatman vs Mitra
 
 I also try to compare between devices as an example:
@@ -1546,12 +1697,10 @@ I also try to compare between devices as an example:
 p.cut <- 0.05     # cut-off for significance.
 m.cut <- 0.5      # cut-off for log2 fold change
 # The algorithm takes the first group as reference, so levels must be changed: 
-levels(res$device) <- c("WHATMAN", "MITRA", "CAPITAINER", "BLOOD", "PLASMA")
 
 #' Define the linear model to be applied to the data
-device <- factor(x = res$device, levels = levels(res$device))
+device <- factor(x = res$device, levels = c("WHATMAN", "MITRA", "CAPITAINER", "BLOOD", "PLASMA"))
 sex <- res$sex
-participants <- factor(res$participants)
 # design <- model.matrix(~ device + sex + participants)
 # As there are NA values in one of the participants we need to continue without participants. 
 
@@ -1571,17 +1720,26 @@ Extract the results:
 tmp_W <- data.frame(
     coef.M = fit_W$coefficients[, "deviceMITRA"],
     pvalue.M = fit_W$p.value[, "deviceMITRA"],
-    adjp.M= p.adjust(fit_W$p.value[, "deviceMITRA"], method = "BH"), # Benjamini-Hochberg correction    
+    adjp.M= p.adjust(fit_W$p.value[, "deviceMITRA"], method = "BH"), # Benjamini-Hochberg correction 
+    avg.M = rowMeans(
+        log2(assay(res, "norm_imputed")[,res$device == "MITRA"])),
+    avg.W = rowMeans(
+        log2(assay(res, "norm_imputed")[,res$device == "WHATMAN"])),
     coef.C = fit_W$coefficients[, "deviceCAPITAINER"],
     pvalue.C = fit_W$p.value[, "deviceCAPITAINER"],
     adjp.C = p.adjust(fit_W$p.value[, "deviceCAPITAINER"], method = "BH"), # Benjamini-Hochberg correction
+    avg.C = rowMeans(
+        log2(assay(res, "norm_imputed")[,res$device == "CAPITAINER"])),
     coef.S = fit_W$coefficients[, "sexW"],
     pvalue.S = fit_W$p.value[, "sexW"],
-    adjp.S = p.adjust(fit_W$p.value[, "sexW"], method = "BH") # Benjamini-Hochberg correction
+    adjp.S = p.adjust(fit_W$p.value[, "sexW"], method = "BH"), # Benjamini-Hochberg correction
+    avg.S = rowMeans(
+        log2(assay(res, "norm_imputed")[,res$device == "SEX"]))
 )
 tmp$significant.M <- tmp_W$adjp.M < 0.05
 tmp$significant.C <- tmp_W$adjp.C < 0.05
 tmp$significant.S <- tmp_W$adjp.S < 0.05
+
 #' Add differential abundance results to the object's rowData
 rowData(res) <- cbind(rowData(res), tmp_W)
 ```
@@ -1620,7 +1778,7 @@ par(mfrow = c(1, 1), mar = c(5, 5, 5, 1))
 plot(rowData(res)$coef.M, -log10(rowData(res)$adjp.M),
      xlab = expression(log[2]~difference),
      ylab = expression(-log[10]~p[BH]), pch = 16, col = "#00000060",
-     main = "Volcano Plot - Mitra",
+     main = "Volcano Plot - Whatman vs Mitra",
      cex.main = 1.5, cex.lab = 1.5, cex.axis = 1.3)
 grid()
 abline(h = -log10(0.05), col = "#1BE959")
@@ -1634,7 +1792,7 @@ par(mfrow = c(1, 1), mar = c(5, 5, 5, 1))
 plot(rowData(res)$coef.C, -log10(rowData(res)$adjp.C),
      xlab = expression(log[2]~difference),
      ylab = expression(-log[10]~p[BH]), pch = 16, col = "#00000060",
-     main = "Volcano Plot - Capitainer",
+     main = "Volcano Plot - Whatman vs Capitainer",
      cex.main = 1.5, cex.lab = 1.5, cex.axis = 1.3)
 grid()
 abline(h = -log10(0.05), col = "#1BE959")
@@ -1664,3 +1822,437 @@ The comparison between plasma vs devices and blood vs devices, look the same.
 The number of significant features seems to be quite high taking into account
 that there are from same patients. Is there any error in the code? Are we
 overfitting the lm?
+
+### Table of signigicant features
+
+```{r significant-features-plasma}
+# Table of significant features in all groups
+tab_devices <- rowData(res)[rowData(res)$significant.W,
+                    c("mzmed", "rtmed", 
+                      "coef.W","pvalue.W","adjp.W", "avg.W",
+                      "avg.P", "avg.M","avg.C", "avg.B", "avg.S",
+                      "coef.M","pvalue.M","adjp.M",
+                      "coef.C","pvalue.C","adjp.C", 
+                      "coef.B","pvalue.B","adjp.B", 
+                      "coef.S","pvalue.S","adjp.S")] |>
+    as.data.frame()
+tab_devices <- tab_devices[order(abs(tab_devices$coef.W), decreasing = TRUE), ]
+kable(tab_devices, format = "pipe")
+```
+
+## LINEAR MODEL - Whatman ~ sex
+
+In this case, I create a linear model where y is the log 2 abundance of each metabolite in each sample, using sex as a binary variable with women/men. The aim is to study if each device of reference sample is able to find significant differences related with the sex. 
+
+```{r lm plasma}
+#' Define the linear model to be applied to the data
+p.cut <- 0.05     # cut-off for significance.
+m.cut <- 0.5      # cut-off for log2 fold change
+
+#' Define the linear model to be applied to the data
+sex <- res_w$sex
+design <- model.matrix(~ + sex)
+
+#' Fit the linear model to the data, explaining metabolite
+#' concentrations by device and sex.
+fit <- lmFit(log2(assay(res_w, "norm_imputed")), design = design) # fit model to log2-transformed abundances
+fit <- eBayes(fit) # calculate p-value
+fit
+```
+
+Extract the results:
+
+```{r result-df-plasma}
+#' Compile a result data frame, do we do one data.frame per device ? or for the full thing ? 
+tmp <- data.frame(
+    coef.S = fit$coefficients[, "sexW"],
+    pvalue.S = fit$p.value[, "sexW"],
+    adjp.S = p.adjust(fit$p.value[, "sexW"], method = "BH"), # Benjamini-Hochberg correction
+    avg.S = rowMeans(
+        log2(assay(res_w, "norm_imputed")[,res_w$device == "SEX"]))
+)
+
+# tmp$significant.W <- tmp$adjp.W < 0.05
+tmp$significant.S <- tmp$adjp.S < 0.05
+#' Add differential abundance results to the object's rowData
+rowData(res_w) <- cbind(rowData(res_w), tmp)
+```
+
+Now we visualise the distribution of the raw and adjusted p-values:
+
+### Distribution pvalues - Whatman ~ sex
+
+```{r distribution-pvalues-plasma}
+#' Plot the distribution of p-values in Sex
+par(mfrow = c(1, 2))
+hist(rowData(res_w)$pvalue.S, breaks = 64, xlab = "p value",
+     main = "Distribution of raw p-values - Sex",
+     cex.main = 1, cex.lab = 1, cex.axis = 1)
+hist(rowData(res_w)$adjp.S, breaks = 64, xlab = expression(p[BH]~value),
+     main = "Distribution of adjusted p-values - Sex",
+     cex.main = 1, cex.lab = 1, cex.axis = 1)
+```
+
+### Volcano plot - Whatman ~ sex
+
+```{r volcano-plot-plasma}
+#' Plot volcano plot of the statistical results - sex
+par(mfrow = c(1, 1), mar = c(5, 5, 5, 1))
+plot(rowData(res_w)$coef.S, -log10(rowData(res_w)$adjp.S),
+     xlab = expression(log[2]~difference),
+     ylab = expression(-log[10]~p[BH]), pch = 16, col = "#00000060",
+     main = "Volcano Plot - Whatman (SEX)",
+     cex.main = 1.5, cex.lab = 1.5, cex.axis = 1.3)
+grid()
+abline(h = -log10(0.05), col = "#82db16")
+if (any(rowData(res_w)$significant.S)) {
+    points(rowData(res_w)$coef.S[rowData(res_w)$significant.S],
+           -log10(rowData(res_w)$adjp.S[rowData(res_w)$significant.S]),
+           col = "#82db16")
+}
+```
+
+### Table of signigicant features - Whatman ~ sex
+
+```{r significant-features-plasma}
+# Table of significant features in all groups
+tab <- rowData(res_w)[rowData(res_w)$significant.S,
+                    c("mzmed", "rtmed", 
+                      "coef.S","pvalue.S","adjp.S")] |>
+    as.data.frame()
+tab <- tab[order(abs(tab$coef.S), decreasing = TRUE), ]
+kable(tab, format = "pipe")
+```
+
+## LINEAR MODEL - Mitra ~ sex
+
+
+```{r lm plasma}
+#' Define the linear model to be applied to the data
+p.cut <- 0.05     # cut-off for significance.
+m.cut <- 0.5      # cut-off for log2 fold change
+
+#' Define the linear model to be applied to the data
+sex <- res_m$sex
+design <- model.matrix(~ + sex)
+
+#' Fit the linear model to the data, explaining metabolite
+#' concentrations by device and sex.
+fit <- lmFit(log2(assay(res_m, "norm_imputed")), design = design) # fit model to log2-transformed abundances
+fit <- eBayes(fit) # calculate p-value
+fit
+```
+
+Extract the results:
+
+```{r result-df-plasma}
+#' Compile a result data frame, do we do one data.frame per device ? or for the full thing ? 
+tmp <- data.frame(
+    coef.S = fit$coefficients[, "sexW"],
+    pvalue.S = fit$p.value[, "sexW"],
+    adjp.S = p.adjust(fit$p.value[, "sexW"], method = "BH"), # Benjamini-Hochberg correction
+    avg.S = rowMeans(
+        log2(assay(res_m, "norm_imputed")[,res_m$device == "SEX"]))
+)
+
+# tmp$significant.W <- tmp$adjp.W < 0.05
+tmp$significant.S <- tmp$adjp.S < 0.05
+#' Add differential abundance results to the object's rowData
+rowData(res_m) <- cbind(rowData(res_m), tmp)
+```
+
+Now we visualise the distribution of the raw and adjusted p-values:
+
+### Distribution pvalues - Mitra ~ sex
+
+```{r distribution-pvalues-plasma}
+#' Plot the distribution of p-values in Sex
+par(mfrow = c(1, 2))
+hist(rowData(res_m)$pvalue.S, breaks = 64, xlab = "p value",
+     main = "Distribution of raw p-values - Sex",
+     cex.main = 1, cex.lab = 1, cex.axis = 1)
+hist(rowData(res_m)$adjp.S, breaks = 64, xlab = expression(p[BH]~value),
+     main = "Distribution of adjusted p-values - Sex",
+     cex.main = 1, cex.lab = 1, cex.axis = 1)
+```
+
+### Volcano plot - Mitra ~ sex
+
+```{r volcano-plot-plasma}
+#' Plot volcano plot of the statistical results - sex
+par(mfrow = c(1, 1), mar = c(5, 5, 5, 1))
+plot(rowData(res_m)$coef.S, -log10(rowData(res_m)$adjp.S),
+     xlab = expression(log[2]~difference),
+     ylab = expression(-log[10]~p[BH]), pch = 16, col = "#00000060",
+     main = "Volcano Plot - Mitra (SEX)",
+     cex.main = 1.5, cex.lab = 1.5, cex.axis = 1.3)
+grid()
+abline(h = -log10(0.05), col = "#a90cdf")
+if (any(rowData(res_m)$significant.S)) {
+    points(rowData(res_m)$coef.S[rowData(res_m)$significant.S],
+           -log10(rowData(res_m)$adjp.S[rowData(res_m)$significant.S]),
+           col = "#a90cdf")
+}
+```
+
+### Table of signigicant features - Mitra ~ sex
+
+```{r significant-features-plasma}
+# Table of significant features in all groups
+tab <- rowData(res_m)[rowData(res_m)$significant.S,
+                    c("mzmed", "rtmed", 
+                      "coef.S","pvalue.S","adjp.S")] |>
+    as.data.frame()
+tab <- tab[order(abs(tab$coef.S), decreasing = TRUE), ]
+kable(tab, format = "pipe")
+```
+
+## LINEAR MODEL - Capitainer ~ sex
+
+```{r lm plasma}
+#' Define the linear model to be applied to the data
+p.cut <- 0.05     # cut-off for significance.
+m.cut <- 0.5      # cut-off for log2 fold change
+
+#' Define the linear model to be applied to the data
+sex <- res_c$sex
+design <- model.matrix(~ + sex)
+
+#' Fit the linear model to the data, explaining metabolite
+#' concentrations by device and sex.
+fit <- lmFit(log2(assay(res_c, "norm_imputed")), design = design) # fit model to log2-transformed abundances
+fit <- eBayes(fit) # calculate p-value
+fit
+```
+
+Extract the results:
+
+```{r result-df-plasma}
+#' Compile a result data frame, do we do one data.frame per device ? or for the full thing ? 
+tmp <- data.frame(
+    coef.S = fit$coefficients[, "sexW"],
+    pvalue.S = fit$p.value[, "sexW"],
+    adjp.S = p.adjust(fit$p.value[, "sexW"], method = "BH"), # Benjamini-Hochberg correction
+    avg.S = rowMeans(
+        log2(assay(res_c, "norm_imputed")[,res_c$device == "SEX"]))
+)
+
+# tmp$significant.W <- tmp$adjp.W < 0.05
+tmp$significant.S <- tmp$adjp.S < 0.05
+#' Add differential abundance results to the object's rowData
+rowData(res_c) <- cbind(rowData(res_c), tmp)
+```
+
+Now we visualise the distribution of the raw and adjusted p-values:
+
+### Distribution pvalues - Capitainer ~ sex
+
+```{r distribution-pvalues-plasma}
+#' Plot the distribution of p-values in Sex
+par(mfrow = c(1, 2))
+hist(rowData(res_c)$pvalue.S, breaks = 64, xlab = "p value",
+     main = "Distribution of raw p-values - Sex",
+     cex.main = 1, cex.lab = 1, cex.axis = 1)
+hist(rowData(res_c)$adjp.S, breaks = 64, xlab = expression(p[BH]~value),
+     main = "Distribution of adjusted p-values - Sex",
+     cex.main = 1, cex.lab = 1, cex.axis = 1)
+```
+
+### Volcano plot - Capitainer ~ sex
+
+```{r volcano-plot-plasma}
+#' Plot volcano plot of the statistical results - sex
+par(mfrow = c(1, 1), mar = c(5, 5, 5, 1))
+plot(rowData(res_w)$coef.S, -log10(rowData(res_w)$adjp.S),
+     xlab = expression(log[2]~difference),
+     ylab = expression(-log[10]~p[BH]), pch = 16, col = "#00000060",
+     main = "Volcano Plot - Capitainer (SEX)",
+     cex.main = 1.5, cex.lab = 1.5, cex.axis = 1.3)
+grid()
+abline(h = -log10(0.05), col = "#57c1f7")
+if (any(rowData(res_w)$significant.S)) {
+    points(rowData(res_w)$coef.S[rowData(res_w)$significant.S],
+           -log10(rowData(res_w)$adjp.S[rowData(res_w)$significant.S]),
+           col = "#57c1f7")
+}
+```
+
+### Table of signigicant features - Capitainer ~ sex
+
+```{r significant-features-plasma}
+# Table of significant features in all groups
+tab <- rowData(res_w)[rowData(res_w)$significant.S,
+                    c("mzmed", "rtmed", 
+                      "coef.S","pvalue.S","adjp.S")] |>
+    as.data.frame()
+tab <- tab[order(abs(tab$coef.S), decreasing = TRUE), ]
+kable(tab, format = "pipe")
+```
+
+## LINEAR MODEL - Plasma ~ sex
+
+```{r lm plasma}
+#' Define the linear model to be applied to the data
+p.cut <- 0.05     # cut-off for significance.
+m.cut <- 0.5      # cut-off for log2 fold change
+
+#' Define the linear model to be applied to the data
+sex <- res_p$sex
+design <- model.matrix(~ + sex)
+
+#' Fit the linear model to the data, explaining metabolite
+#' concentrations by device and sex.
+fit <- lmFit(log2(assay(res_p, "norm_imputed")), design = design) # fit model to log2-transformed abundances
+fit <- eBayes(fit) # calculate p-value
+fit
+```
+
+Extract the results:
+
+```{r result-df-plasma}
+#' Compile a result data frame, do we do one data.frame per device ? or for the full thing ? 
+tmp <- data.frame(
+    coef.S = fit$coefficients[, "sexW"],
+    pvalue.S = fit$p.value[, "sexW"],
+    adjp.S = p.adjust(fit$p.value[, "sexW"], method = "BH"), # Benjamini-Hochberg correction
+    avg.S = rowMeans(
+        log2(assay(res_p, "norm_imputed")[,res_p$device == "SEX"]))
+)
+
+# tmp$significant.W <- tmp$adjp.W < 0.05
+tmp$significant.S <- tmp$adjp.S < 0.05
+#' Add differential abundance results to the object's rowData
+rowData(res_p) <- cbind(rowData(res_p), tmp)
+```
+
+Now we visualise the distribution of the raw and adjusted p-values:
+
+### Distribution pvalues - Plasma ~ sex
+
+```{r distribution-pvalues-plasma}
+#' Plot the distribution of p-values in Sex
+par(mfrow = c(1, 2))
+hist(rowData(res_p)$pvalue.S, breaks = 64, xlab = "p value",
+     main = "Distribution of raw p-values - Sex",
+     cex.main = 1, cex.lab = 1, cex.axis = 1)
+hist(rowData(res_p)$adjp.S, breaks = 64, xlab = expression(p[BH]~value),
+     main = "Distribution of adjusted p-values - Sex",
+     cex.main = 1, cex.lab = 1, cex.axis = 1)
+```
+
+### Volcano plot - Plasma ~ sex
+
+```{r volcano-plot-plasma}
+#' Plot volcano plot of the statistical results - sex
+par(mfrow = c(1, 1), mar = c(5, 5, 5, 1))
+plot(rowData(res_p)$coef.S, -log10(rowData(res_p)$adjp.S),
+     xlab = expression(log[2]~difference),
+     ylab = expression(-log[10]~p[BH]), pch = 16, col = "#00000060",
+     main = "Volcano Plot - Plasma (SEX)",
+     cex.main = 1.5, cex.lab = 1.5, cex.axis = 1.3)
+grid()
+abline(h = -log10(0.05), col = "#dfdc16")
+if (any(rowData(res_p)$significant.S)) {
+    points(rowData(res_p)$coef.S[rowData(res_p)$significant.S],
+           -log10(rowData(res_p)$adjp.S[rowData(res_p)$significant.S]),
+           col = "#dfdc16")
+}
+```
+
+### Table of signigicant features - Plasma ~ sex
+
+```{r significant-features-plasma}
+# Table of significant features in all groups
+tab <- rowData(res_p)[rowData(res_p)$significant.S,
+                    c("mzmed", "rtmed", 
+                      "coef.S","pvalue.S","adjp.S")] |>
+    as.data.frame()
+tab <- tab[order(abs(tab$coef.S), decreasing = TRUE), ]
+kable(tab, format = "pipe")
+```
+
+
+## LINEAR MODEL - Blood ~ sex
+
+```{r lm plasma}
+#' Define the linear model to be applied to the data
+p.cut <- 0.05     # cut-off for significance.
+m.cut <- 0.5      # cut-off for log2 fold change
+
+#' Define the linear model to be applied to the data
+sex <- res_b$sex
+design <- model.matrix(~ + sex)
+
+#' Fit the linear model to the data, explaining metabolite
+#' concentrations by device and sex.
+fit <- lmFit(log2(assay(res_b, "norm_imputed")), design = design) # fit model to log2-transformed abundances
+fit <- eBayes(fit) # calculate p-value
+fit 
+```
+
+Extract the results:
+
+```{r result-df-plasma}
+#' Compile a result data frame, do we do one data.frame per device ? or for the full thing ? 
+tmp <- data.frame(
+    coef.S = fit$coefficients[, "sexW"],
+    pvalue.S = fit$p.value[, "sexW"],
+    adjp.S = p.adjust(fit$p.value[, "sexW"], method = "BH"), # Benjamini-Hochberg correction
+    avg.S = rowMeans(
+        log2(assay(res_b, "norm_imputed")[,res_b$device == "SEX"]))
+)
+
+# tmp$significant.W <- tmp$adjp.W < 0.05
+tmp$significant.S <- tmp$adjp.S < 0.05
+#' Add differential abundance results to the object's rowData
+rowData(res_b) <- cbind(rowData(res_b), tmp)
+```
+
+Now we visualise the distribution of the raw and adjusted p-values:
+
+### Distribution pvalues - Blood ~ sex
+
+```{r distribution-pvalues-plasma}
+#' Plot the distribution of p-values in Sex
+par(mfrow = c(1, 2))
+hist(rowData(res_b)$pvalue.S, breaks = 64, xlab = "p value",
+     main = "Distribution of raw p-values - Sex",
+     cex.main = 1, cex.lab = 1, cex.axis = 1)
+hist(rowData(res_b)$adjp.S, breaks = 64, xlab = expression(p[BH]~value),
+     main = "Distribution of adjusted p-values - Sex",
+     cex.main = 1, cex.lab = 1, cex.axis = 1)
+```
+
+### Volcano plot - Blood ~ sex
+
+```{r volcano-plot-plasma}
+#' Plot volcano plot of the statistical results - sex
+par(mfrow = c(1, 1), mar = c(5, 5, 5, 1))
+plot(rowData(res_b)$coef.S, -log10(rowData(res_b)$adjp.S),
+     xlab = expression(log[2]~difference),
+     ylab = expression(-log[10]~p[BH]), pch = 16, col = "#00000060",
+     main = "Volcano Plot - Blood (SEX)",
+     cex.main = 1.5, cex.lab = 1.5, cex.axis = 1.3)
+grid()
+abline(h = -log10(0.05), col = "#f25800")
+if (any(rowData(res_b)$significant.S)) {
+    points(rowData(res_b)$coef.S[rowData(res_b)$significant.S],
+           -log10(rowData(res_b)$adjp.S[rowData(res_b)$significant.S]),
+           col = "#f25800")
+}
+```
+
+### Table of signigicant features - Blood ~ sex
+
+```{r significant-features-plasma}
+# Table of significant features in all groups
+tab <- rowData(res_b)[rowData(res_b)$significant.S,
+                    c("mzmed", "rtmed", 
+                      "coef.S","pvalue.S","adjp.S")] |>
+    as.data.frame()
+tab <- tab[order(abs(tab$coef.S), decreasing = TRUE), ]
+kable(tab, format = "pipe")
+```
+
+We can confirm that devices are no able to bring significant differences between men and women. Only one feature in plasma was significantly different between women and men with a adjusted pvalue > 0.05.
+
