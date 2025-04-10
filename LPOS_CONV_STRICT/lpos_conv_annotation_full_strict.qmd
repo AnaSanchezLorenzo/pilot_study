@@ -1,0 +1,422 @@
+---
+title: "Data analysis of Pilot Study from Imperial - Full data."
+format: html
+tbl-cap-location: bottom
+editor: visual
+date: 'Compiled: `r format(Sys.Date(), "%B %d, %Y")`'
+author: Philippine Louail, Ana Sanchez Lorenzo
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+library(quarto)
+knitr::opts_knit$set(root.dir = './')
+```
+
+# Loading packages
+
+```{r packages-used, message=FALSE, warning=FALSE}
+#| code-fold: true
+#| code-summary: "Show the code"
+## General bioconductor package
+library(BiocStyle)
+library(BiocParallel)
+library(knitr)
+
+## Data Import and handling
+library(readxl)
+library(MsExperiment)
+#library(MsIO)
+#library(alabaster.se)
+library(SummarizedExperiment)
+
+## Preprocessing of LC-MS data
+library(xcms)
+library(Spectra)
+library(MetaboCoreUtils)
+
+## Statistical analysis
+library(limma) # Differential abundance
+library(matrixStats) # Summaries over matrices
+
+## Visualisation
+library(pander)
+library(RColorBrewer)
+library(pheatmap)
+library(vioplot)
+library(ggfortify)   # Plot PCA
+library(gridExtra)   # To arrange multiple ggplots into single plots
+library(grid)
+library(UpSetR)
+
+## Annotation
+library(AnnotationHub) # Annotation resources
+library(CompoundDb)    # Access small compound annotation data.
+library(MetaboAnnotation) # Functionality for metabolite annotation.
+```
+
+# DATA ORGANISATION
+
+## Data import
+
+```{r import, message=FALSE}
+# Data import
+load("preprocessed_lcms1.RData")
+load("res_sign_fts.RData")
+featureDefinitions(lcms1) |>head()
+res <- res_sign_fts
+```
+
+```{r indexing, message=FALSE}
+# Index per sample group
+idx_qc <- sampleData(lcms1)$device == "QC"
+idx_blank <- sampleData(lcms1)$device == "BLANK"
+idx_blank_qc <- sampleData(lcms1)$device %in% c("QC","BLANK")
+idx_samples <- sampleData(lcms1)$device %in% c("WHATMAN", "MITRA", "CAPITAINER", "PLASMA", "BLOOD")
+idx_bl_sp <- sampleData(lcms1)$blank_type %in% c("BLANK_W", "BLANK_C", "BLANK_M")
+```
+
+```{r par-process}
+#' Set up parallel processing using 3 cores
+if (.Platform$OS.type == "unix") {
+  register(MulticoreParam(4)) ### chunksize has to be be the same number. 
+ } else {
+     register(SnowParam(4))
+}
+```
+
+## Define colors
+
+We will define colors for each of the sample groups based on their sample group
+using the *RColorBrewer* package:
+
+```{r define-colors}
+#| echo: true
+#' Define colors for full dataset
+leg_full <- brewer.pal(12, name = "Set3")[c(1, 12, 7, 5, 10, 4, 6)]
+names(leg_full) <- unique(sampleData(lcms1)$device)
+leg_full["QC"] <- "#f00e0e"
+col_sample <- leg_full[sampleData(lcms1)$device]
+
+#' define colors for devices only
+leg_blank_BuS <- leg_full[-c(1, 2, 6, 7)]
+col_blank_BuS <- leg_blank_BuS[sampleData(lcms1[!idx_bl_sp])$device]
+leg_blank_BuS <- leg_blank_BuS[c("WHATMAN", "MITRA", "CAPITAINER")]
+```
+
+##Participants column addition For Differential abundance analysis we need to
+specify participants. For that we need to add a new column from sample_name
+column information in lcms1 object and res object.
+
+```{r}
+#' Create a new column with participants names without device specification.
+sampleData(lcms1)$participants <- substr(sampleData(lcms1)$sample_name, 1, nchar(sampleData(lcms1)$sample_name) -1)
+sampleData(lcms1)$participants[idx_blank_qc] <- NA_character_
+colData(res)$participants <- substr(colData(res)$sample_name, 1, nchar(colData(res)$sample_name) - 1)
+#colData(res)$participants[idx_blank_qc] <- NA_character_  # fix error
+```
+
+NOTE: Error in `[[<-`(`*tmp*`, name, value = c(NA, NA, NA, NA, NA, NA, "C06", :
+66 elements in value to replace 50 elements
+
+# ANNOTATION
+
+## MS1 Annotation
+
+After the differential abundance analysis, the next step is to identify the
+features with significant differences in abundances between plasma and the rest
+of groups. As the data was acquired using the NPC LPOS method, we could target
+the compounds from the NPC library. However, as LC set-up was different
+(different sample manager and different tubing length), only m/z values will be
+able to match, not rt values.
+
+To do the matching of m/z values, MetaboAnnotation package is used. This is the
+lowest level of confidence in metabolite annotation. However, it gives ideas
+about of metabolites present in samples.
+
+To start with, I imported the library of metabolites called targed_df.
+
+```{r import-ms1-features}
+# Import NPC-LPOS library from csv file
+target_df <- read.csv("LPOS_ROI_V_5_1_2.csv")
+target_df <- as.data.frame(target_df)  # Ensure it is a data frame
+head(target_df)  
+```
+
+Then, I prepared the data.frame with experimental features detected:
+
+```{r query-df}
+# Prepare query data frame
+rowData(res)$feature_id <- rownames(rowData(res))
+res_sig_W <- res[rowData(res)$significant.W, ]
+rowData(res_sig_W)
+```
+
+Now, we do the matching in comparison with the target dataframe with reference
+known compounds. As we already have the ion description in the library, we
+include those adducts.
+
+```{r match}
+#' Setup parameters for the matching
+param <- Mass2MzParam(adducts = c("[M+H]+", "[M+Na]+", "[M+NH4]+", "[M+H-H2O]+",  "[M+K]+", "[M]+"),
+                      tolerance = 0, ppm = 10)
+
+#' Perform the matching.
+mtch <- matchValues(res_sig_W, target_df, param = param, 
+                    mzColname = "mzmed", 
+                    massColname = "Monoisotopic_mass")
+mtch
+```
+
+NOTE: Metabonaut: tolerance = 0, ppm = 5; MetaboAnnotation: tolerance = 0.005,
+ppm = 0. No need to be that restrictive as I am using my own library with
+metabolites already identified with standards in my lab with same method.
+
+The resulting Matched object (with 10 ppm) shows that 362 out of 1623
+significant features were matched against at least one target compound. Out of the 378 identify ions in NPC library, we are able to match 226 metabolites. 
+The result object (mtch) contains the full query data.frame and target data.frame as well as the matching information. To visualize the info from mtch:
+
+```{r visualisation1}
+head(query(mtch))
+```
+
+```{r visualisation2}
+head(target(mtch))
+```
+
+```{r visualisation3}
+whichQuery(mtch)
+```
+
+```{r visualisation4}
+whichTarget(mtch)
+```
+
+```{r visualisation5}
+colnames(mtch)
+```
+
+```{r extraction-match}
+matchedData(mtch)|> head()
+```
+
+```{r visualisation5}
+mtch$target_cpdName |> head()
+```
+
+Below I extract the full result from the Matched object:
+
+```{r extration-match}
+mtch_res <- matchedData(mtch, c("feature_id", "mzmed", "rtmed", "adduct", 
+                                "target_ion", "ppm_error", 
+                                "target_chemicalFormula", 
+                                "target_Monoisotopic_mass", 
+                                "target_cpdName", "target_InChI" ))
+
+mtch_res
+```
+
+To reduce redundancy in the result table we below iterate over the hits of a
+feature and keep only matches to unique compounds (identified by their
+INCHIKEY). The INCHI name combine information from compound’s chemical
+formula and structure, so while different compounds can share the same chemical
+formula, they should have a different structure and thus INCHI.
+
+```{r}
+rownames(mtch_res) <- NULL
+
+#' Keep only info on features that machted - create a utility function for that
+mtch_res <- split(mtch_res, mtch_res$feature_id) |>
+    lapply(function(x) {
+        lapply(split(x, x$target_InChI), function(z) {
+            z[which.min(z$ppm_error), ]
+        })
+    }) |>
+    unlist(recursive = FALSE) |>
+    do.call(what = rbind)
+
+#' Display the results
+kable(mtch_res, format = "pipe")
+```
+
+```{r}
+nrow(mtch_res)
+```
+
+Object of class Matched 
+Total number of matches: 625 
+Number of query objects: 1622 (362 matched)
+Number of target objects: 378 (226 matched)
+But nrow(mtch_res) = 411??? Why is it different? 
+
+While being of low confidence, MS1-based annotation can provide first candidate
+annotations that could be confirmed or rejected by additional analyses.
+
+## MS2 Annotation
+
+LC MS/MS data were recorded in data depending acquisition (DDA) in pooled samples (and QCs samples). However, method was not fully optimised and it seems MS2 data points will not be really abundance in those samples. I would like to test the data to see how do I need to modify the method. 
+
+The MS2 data was acquited in 7 different samples: 
+- pool sample from each device (Individual 11C, 11W, 11M)
+- pool general sample (QC)
+- pool sample from each device (QCC, QCW, QCM)
+
+In total we have 4 measurements from each samples with different mz ranges: 
+- 001: mz range from 50 to 400 Da
+- 002: mz range from 400 to 800 Da
+- 003: mz range from 800 to 1200 Da
+- 004: mz range from 50 to 1200 Da. 
+
+This was performed because we experienced a mass sensibility issue in the instrument and by decreasing the mz range sensibility can increase. 
+
+First step is to load LC-MS/MS data and subset it now only for general QC samples. 
+
+```{r import-files}
+#' read the sample descriptions from an xlsx sheet
+pd_MS2 <- read_xlsx("metadata_msms_lcms_rpos.xlsx", sheet = "samples") |>
+    as.data.frame()
+
+#' Import MS2 files
+MS2_mzml_path <- file.path("data/lpos_conv_DDA") 
+
+lcms2 <- readMsExperiment(file.path(MS2_mzml_path, "/",pd_MS2$mzML_file),
+                          sampleData = pd_MS2)
+lcms2
+```
+  
+```{r}
+# Add mzrange data information (from filenames)
+sampleData(lcms2)$fragmentation_mode <- c("001", "002", "003", "004")
+
+#' Subset only samples with mz range form 50-1200Da. 
+idx_mzrange <- sampleData(lcms2)$fragmentation_mode =="004"
+lcms2_004 <- lcms2[idx_mzrange]
+
+#let's look at the updated sample data
+sampleData(lcms2_004)
+colnames(sampleData(lcms2_004)) 
+sampleData(lcms2_004) |> kable (format = "pipe")
+```
+MS2 Data is filtered to the same RT range as LC-MS run to clean unnecessary peaks that will not be intered
+```{r}
+#' Filter the data to the same RT range as the LC-MS run
+lcms2_004 <- filterRt(lcms2_004, c(60, 700))
+```
+Below we show the number of MS1 and MS2 spectra for each of the files.
+
+```{r}
+#' check the number of spectra per ms level
+spectra(lcms2_004) |>
+    msLevel() |>
+    split(spectraSampleIndex(lcms2_004)) |>
+    lapply(table) |>
+    do.call(what = cbind)
+```
+In the plot below we can observe the different mz ranges in each sample measurement. This was performed using the QC sample. 
+
+```{r}
+#|fig: "Figure XX. Precursor ions in the LC-MS/MS data set."
+# par(mar = c(4, 4, 2, 4))
+par (mfrow = c(7, 1), mar = c(2, 2.5, 2, 4))
+plotPrecursorIons(lcms2_004, cex = 0.2)
+grid() 
+```
+NOTE: replot with the rest of samples? If I plot all samples it looks really small and data cannot be visualise properly. Title is the same for all samples?
+We observed a high amount of low mass molecules and few high mass molecules. 
+
+We next extract the Spectra object with the MS data from the data object and assign a new spectra variable with the employed collision energy, which we extract from the data object sampleData.
+
+For the next steps MS data is filtered by: 
+- restricting MS2 spectra 
+- removing mass peaks from each spectrum with an intensity that is lower than 5% of the highest intensity for that spectrum, assuming that these very low intensity peaks represent background signal.
+- removing also mass peaks with an m/z value greater or equal to the precursor m/z of the ion. This puts, for the later matching against reference spectra, more weight on the fragmentation pattern of ions and avoids hits based only on the precursor m/z peak (and hence a similar mass of the compared compounds). 
+- restricting the data to spectra with at least two fragment peaks and scale their intensities such that their sum is 1 for each spectrum.
+
+While similarity calculations are not affected by this scaling, it makes visual comparison of fragment spectra easier to read.
+
+```{r}
+#' extract spectra object
+ms2_ctr <- spectra(lcms2_004)
+
+#' Remove low intensity peaks
+low_int <- function(x, ...) {
+    x > max(x, na.rm = TRUE) * 0.05
+}
+ms2_ctr <- filterMsLevel(ms2_ctr, 2L) |>
+    filterIntensity(intensity = low_int) 
+
+# NOTE: 2L is MS2data only?
+#' Remove precursor peaks and restrict to spectra with a minimum number of peaks
+ms2_ctr <- filterPrecursorPeaks(ms2_ctr, ppm = 50, mz = ">=")
+ms2_ctr <- ms2_ctr[lengths(ms2_ctr) > 1] |>
+    scalePeaks()
+```
+NOTE: back end is only for data from Metabolight?
+
+The goal of the workflow is to *identify the MS2 spectra* from the second (LC-MS/MS) run that could represent fragments of the ions of features from the data in the first (LC-MS) run. 
+
+Our approach is to match MS2 spectra against the *significant features* determined earlier based on their precursor m/z and retention time (given an acceptable tolerance) to the feature’s m/z and retention time. This can be easily done using the featureArea() function that effectively considers the *actual m/z and retention time ranges of the features’ chromatographic peaks* and therefore increase the chance of finding a correct match. 
+This, however, also assumes that retention times between the first and second run don’t differ by much. Alternatively, we would need to align the retention times of the second LC-MS/MS data set to those of the first.
+
+```{r}
+#' Define the m/z and retention time ranges for the significant features
+target <- featureArea(lcms1)[rownames(res_sig_W), ]
+target
+
+```
+We next *identify the fragment spectra* with their precursor m/z and retention times within these ranges. We use the filterRanges() function that allows to filter a Spectra object using multiple ranges simultaneously. We apply this function separately to each feature (row in the above matrix) to extract the MS2 spectra representing fragmentation information of the presumed feature’s ions.
+
+```{r}
+#' Identify for each feature MS2 spectra with their precursor m/z and
+#' retention time within the feature's m/z and retention time range
+ms2_ctr_fts <- apply(target[, c("rtmin", "rtmax", "mzmin", "mzmax")],
+                     MARGIN = 1, FUN = filterRanges, object = ms2_ctr,
+                     spectraVariables = c("rtime", "precursorMz"))
+lengths(ms2_ctr_fts)
+# test<- ms2_ctr_fts[lengths(ms2_ctr_fts) > 0]
+# lengths(test)
+```
+The result from this apply() call is a list of Spectra, each element representing the result for one feature. With the exception of the last feature, multiple MS2 spectra could be identified. We next combine the list of Spectra into a single Spectra object using the concatenateSpectra() function and add an additional spectra variable containing the respective feature identifier.
+
+```{r}
+l <- lengths(ms2_ctr_fts)
+#' Combine the individual Spectra objects
+ms2_ctr_fts <- concatenateSpectra(ms2_ctr_fts) 
+#' fix error: Error in .concatenate_spectra(unlist(unname(list(unname(x), ...)))) :  Can not  concatenate 'Spectra' objects with non-empty processing queue. Consider calling 'applyProcessing' before.
+
+#' Assign the feature identifier to each MS2 spectrum
+ms2_ctr_fts$feature_id <- rep(rownames(res_sig), l)
+
+## Save for reuse in other vignettes
+save(ms2_ctr_fts, file = "objects/spectra_significant_fts.RData")
+
+```
+
+We next build our reference data which we need to process the same way as our query spectra. We extract all fragment spectra from the MassBank database, restrict to positive polarity data (since our experiment was acquired in positive polarity) and perform the same processing to the fragment spectra from the MassBank database.
+
+NOTE: does MassBank containe LPOS annotations? wichi dataset do I need to load?
+
+```{r}
+#' load reference data
+ah <- AnnotationHub()
+
+#' List available MassBank data sets
+query(ah, "MassBank")
+```
+```{r}
+#' Load one MassBank release: choose last release. 
+mb <- ah[["AH119519"]]
+
+ms2_ref <- Spectra(mb) |>
+    filterPolarity(1L) |>
+    filterIntensity(intensity = low_int) |>
+    filterPrecursorPeaks(ppm = 50, mz = ">=")
+ms2_ref <- ms2_ref[lengths(ms2_ref) > 1] |>
+    scalePeaks()
+```
+I cannot continue with the concatenate function error. 
+
+...
+
+
+
