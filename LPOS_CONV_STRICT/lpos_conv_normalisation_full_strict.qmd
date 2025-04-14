@@ -69,7 +69,8 @@ featureDefinitions(lcms1) |>head()
 idx_qc <- sampleData(lcms1)$device == "QC"
 idx_blank <- sampleData(lcms1)$device == "BLANK"
 idx_blank_qc <- sampleData(lcms1)$device %in% c("QC","BLANK")
-idx_samples <- sampleData(lcms1)$device %in% c("WHATMAN", "MITRA", "CAPITAINER", "PLASMA", "BLOOD")
+idx_samples <- sampleData(lcms1)$device %in% c("WHATMAN", "MITRA",
+                                               "CAPITAINER", "PLASMA", "BLOOD")
 idx_bl_sp <- sampleData(lcms1)$blank_type %in% c("BLANK_W", "BLANK_C", "BLANK_M")
 ```
 
@@ -101,16 +102,18 @@ col_blank_BuS <- leg_blank_BuS[sampleData(lcms1[!idx_bl_sp])$device]
 leg_blank_BuS <- leg_blank_BuS[c("WHATMAN", "MITRA", "CAPITAINER")]
 ```
 
-##Participants column addition For Differential abundance analysis
+## Participants column addition For Differential abundance analysis
 
 Linear model will include need to specify participants. For that we need to add
 a new column from sample_name.
 
 ```{r participants}
 #' Create a new column with participants names without device specification.
-sampleData(lcms1)$participants <- substr(sampleData(lcms1)$sample_name, 1, nchar(sampleData(lcms1)$sample_name) -1)
+sampleData(lcms1)$participants <- substr(sampleData(lcms1)$sample_name, 1,
+                                         nchar(sampleData(lcms1)$sample_name) -1)
 sampleData(lcms1)$participants[idx_blank_qc] <- NA_character_
-colData(res)$participants <- substr(colData(res)$sample_name, 1, nchar(colData(res)$sample_name) - 1)
+colData(res)$participants <- substr(colData(res)$sample_name, 1,
+                                    nchar(colData(res)$sample_name) - 1)
 colData(res)$participants[idx_blank_qc] <- NA_character_
 ```
 
@@ -154,7 +157,7 @@ not take into account blanks and/or QCs.
 ### We remove blank and QC samples from the study samples
 
 res_blank <- res[, res$device == "BLANK"] #only blank
-res <- res[,!idx_blank]
+res <- res[, !idx_blank]
  
 #remove features that only have NA in the study samples
 na_idx <- apply(assay(res, "raw_filled"), MARGIN = 1, function(x) all(is.na(x)))
@@ -167,8 +170,8 @@ leg_full["QC"] <- "#f00e0e"
 col_sample <- leg_full[res$device]
 ```
 
-For better representation, data is log2 transform and center in order to
-stabilize the variance and remove dependence on absolute abundances,
+For better representation, data is log2 transformed, centered and scaled in 
+order to stabilize the variance and remove dependence on absolute abundances,
 respectively.
 
 Plot all the PCA to observe the data structure and grouping of the different
@@ -481,7 +484,8 @@ legend("topright", col = leg_full,
 
 After normalization, relative log abundance plot shows that all QCs abundance
 have been centered around the median. This make the medians of each sample close
-to zero.
+to zero. Also, all boxes are centered around 0 suggesting all samples being
+comparable.
 
 RLA plot is performed again only focussing on QC samples for better
 visualisation.
@@ -516,16 +520,18 @@ abline(h = 0, lty = 3, lwd = 1, col = "black")
 legend("topright", col = colors,
        legend = names(leg_full), lty=1, lwd = 2, xpd = TRUE, ncol = 3,
        cex = 0.6,  bty = "n")
-
-
-
 ```
-By only plotting the QCs we can visualise the effect of normalisation based on QC samples are centered around 0. 
+
+By only plotting the QCs we can visualise the effect of normalisation based on
+QC samples are centered around 0. 
+
+
 ### CV after normalisation
 
 ```{r CV-after-norm}
 #' Calculate the CV values
-index_samples <- res$device %in% c("WHATMAN", "MITRA", "CAPITAINER", "PLASMA", "BLOOD")
+index_samples <- res$device %in% c("WHATMAN", "MITRA", "CAPITAINER",
+                                   "PLASMA", "BLOOD")
 index_QC <- res$device == "QC"
 
 sample_res <- cbind(
@@ -549,6 +555,12 @@ res_df <- data.frame(
 
 kable(res_df, format = "pipe")
 ```
+
+The coefficient of variation is clearly reduced by the normalization for the QC
+samples suggesting that indeed technical variance was removed. For study
+samples, CV is comparable suggesting that normalization indeed just reduced the
+technical, but not the biological variance in the data set.
+
 
 #### Density Plots with the distribution of CV in the whole dataset.
 
@@ -644,11 +656,14 @@ rowData(res)$possible_contaminants[is.na(rowData(res)$possible_contaminants)] <-
 
 # subsetting res removing possible contaminants from blank. 
 ## NOTE: FROM NOW ON NROWs is has less features. Do not mix. 
-res <- res[!rowData(res)$possible_contaminants,]
+res <- res[!rowData(res)$possible_contaminants, ]
 nrow(res)
 #Percentage of features removed
 nrow(res)/nrow(res_orig) * 100
 ```
+
+The original data set consisted of `r nrow(res_orig)` features. Removal of
+possible contaminants reduced the data set to `r nrow(res)` features.
 
 Number of possible_contaminants removed: 338 Number features remaining 2564
 Percentage remain features : 88%
@@ -663,16 +678,16 @@ samples, for each feature.
 res_unfilt <- res
 ```
 
-Total number of features in raw data: 'r nrow(assay(res_unfilt))'.
-
 ```{r RSD-filter}
 #' Compute and filter based on the RsdFilter
 filter_Rsd <- RsdFilter(threshold = 0.3,
                         qcIndex = res$device == "QC",
-                        mad = FALSE)
+                        mad = FALSE) # any particular reason why mad = FALSE was used here and not above?
 res <- filterFeatures(res, filter = filter_Rsd, assay = "norm_imputed")
 
 ```
+
+After RSD (CV) filtering, the data set contains `r nrow(res)` features.
 
 NOTE: check filtering. before 198 features were removed. Why now 200 features
 are removed?
@@ -1030,24 +1045,113 @@ axis(1, at = 1:length(num_ft[,1]), labels = FALSE)
 grid(lwd = 0.5)
 legend("top", legend = names(logical_all), col = leg_full, 
        pch = 16, cex = 0.8, horiz = TRUE, bty = "n")
-
+grid()
 # Plot intensity
-par(mar = c(3, 4.5, 2, 3))
+par(mar = c(4.5, 4.5, 2, 3))
 ylim_intensity <- range(unlist(int))
-plot(int[[1]], type = "b", pch = 16, xlab = "rt",
-     ylab = "Log2 intensity", col = leg_full[[1]], xaxt = "n", ylim = ylim_intensity)
+plot(int[[1]], type = "b", pch = 16, ylab = "Log2 intensity",
+     col = leg_full[[1]], xaxt = "n", xlab = "Retention time bins [s]",
+     ylim = ylim_intensity)
 for (i in 2:length(int)) {
   lines(int[[i]], type = "b", pch = 16, col = leg_full[i])
 }
-axis(1, at = 1:length(int), las = 2, cex.axis = 0.8)
-#labels = names(int
-mtext("Retention time (s)", side = 1, line = 4, cex = 1)
+axis(side = 1, at = seq_len(nrow(num_ft)), labels = rownames(num_ft))
 grid()
 ```
-The number of features across the rt is similar between the devices. However, blood and plasma present less number of features in a between 3-6 min and 8-10 (aproximately). These are areas of chromatogram that do not match with specific biological lipids groups, so we will expect differences in contaminants features. In general, in the regions where we found biological features plasma and blood present less intensity than the devices.  
 
-NOTE: How can i include xlab with title = "retention time." 
-NOTE: Include the m/z charge across the rt. would it look like ion map?
+The number of features across the rt is similar between the devices. However,
+blood and plasma present less number of features in a between 3-6 min and 8-10
+(aproximately). These are areas of chromatogram that do not match with specific
+biological lipids groups, so we will expect differences in contaminants
+features. In general, in the regions where we found biological features plasma
+and blood present less intensity than the devices.
+
+## Distribution across m/z
+
+```{r}
+#' Bin features per m/z slices
+vc <- rowData(res)$mzmed
+breaks <- seq(60, max(vc, na.rm = TRUE) + 1, length.out = 15) |> 
+    round(0) 
+cuts <- cut(vc, breaks = breaks, include.lowest = TRUE)
+table(cuts)
+
+num_ft <- apply(binary_all, MARGIN = 2, 
+                function(x) unlist(lapply(split(x, cuts), sum)))
+
+#' Create the dataframe with TRUE/FALSE values per sample group. 
+#conditioning: if rowsum is more or igual than 5 it is TRUE, otherwise FALSE.
+logical_all <- data.frame(
+    WHATMAN = rowSums(fts_W) >= 5,
+    CAPITAINER = rowSums(fts_C) >= 5,
+    MITRA = rowSums(fts_M) >= 5,
+    BLOOD = rowSums(fts_B) >= 5,
+    PLASMA = rowSums(fts_P) >= 5
+    ) 
+
+#' Subset Res object per sample group
+res_w <- res[logical_all$WHATMAN, res$device == "WHATMAN"]
+res_m <- res[logical_all$MITRA, res$device == "MITRA"]
+res_c <- res[logical_all$CAPITAINER, res$device == "CAPITAINER"]
+res_b <- res[logical_all$BLOOD, res$device == "BLOOD"]
+res_p <- res[logical_all$PLASMA, res$device == "PLASMA"]
+
+#' Create funtion to sum intensities per groups and then per rt slices. 
+ftc <-function(res_devices, fts_idx) {
+    tmp <- rowMedians(assay(res_devices, "raw"), na.rm = TRUE) # get median of intensity per feature
+    cuts_tmp <- cuts[fts_idx] #split into the rt ranges/slices
+    t <- split(tmp, cuts_tmp) |>
+        lapply(sum, na.rm = TRUE, simplify = TRUE) # summing per slices
+    unlist(t)
+}
+
+ftc(res_devices = res_w, fts_idx = logical_all$WHATMAN)
+ftc(res_devices = res_m, fts_idx = logical_all$MITRA)
+ftc(res_devices = res_c, fts_idx = logical_all$CAPITAINER)
+ftc(res_devices = res_b, fts_idx = logical_all$BLOOD)
+ftc(res_devices = res_p, fts_idx = logical_all$PLASMA)
+
+int <- list(
+    WHATMAN = log2(ftc(res_w, logical_all$WHATMAN)),
+    MITRA = log2(ftc(res_m, logical_all$MITRA)),
+    CAPITAINER = log2(ftc(res_c, logical_all$CAPITAINER)),
+    BLOOD = log2(ftc(res_b, logical_all$BLOOD)),
+    PLASMA = log2(ftc(res_p, logical_all$PLASMA))
+    )
+```
+
+```{r}
+# Plot
+layout(mat = matrix(1:2, ncol = 1), heights = c(0.5, 0.5))
+par(mar = c(0.5, 4.5, 2, 3))
+
+## Plot number of features
+ylim_features <- c(0, max(unlist(num_ft)))
+plot(x = seq_len(nrow(num_ft)), y = num_ft[,1], xaxt = "n", col = leg_full[1], ylab = "Number of features",
+     xlab = "", type = "b", pch = 16,  ylim = ylim_features,
+     main = "Analysis along the m/z axis for each devices")
+for (i in 2:ncol(num_ft)) {
+   points(x = seq_len(nrow(num_ft)), y = num_ft[,i], col = leg_full[i], type = "b", pch = 16)
+}
+axis(1, at = 1:length(num_ft[,1]), labels = FALSE)
+grid(lwd = 0.5)
+legend("top", legend = names(logical_all), col = leg_full, 
+       pch = 16, cex = 0.8, horiz = TRUE, bty = "n")
+grid()
+# Plot intensity
+par(mar = c(4.5, 4.5, 2, 3))
+ylim_intensity <- range(unlist(int))
+plot(int[[1]], type = "b", pch = 16, ylab = "Log2 intensity",
+     col = leg_full[[1]], xaxt = "n", xlab = "m/z bins [s]",
+     ylim = ylim_intensity)
+for (i in 2:length(int)) {
+  lines(int[[i]], type = "b", pch = 16, col = leg_full[i])
+}
+axis(side = 1, at = seq_len(nrow(num_ft)), labels = rownames(num_ft))
+grid()
+```
+
+
 
 # DIFFERENCIAL ABUNDANCE ANALYSIS (lm)
 
@@ -1072,7 +1176,7 @@ vals <- apply(assay(res, "norm_imputed"), MARGIN = 1, na_unidis) |>
     log2() |>
     scale(center = TRUE, scale = TRUE)
 pca_res_norm <- prcomp(vals, scale = FALSE, 
-                               center = FALSE)
+                       center = FALSE)
 
 vals_st <- cbind(vals, device = res$device)
 pca_sample_adj <- autoplot(pca_res_norm, data = vals_st,
@@ -1101,8 +1205,9 @@ m.cut <- 0.5      # cut-off for log2 fold change
 # levels(res$device) <- c("PLASMA", "WHATMAN", "MITRA", "CAPITAINER", "BLOOD")
 
 #' Define the linear model to be applied to the data
-device <- factor(x = res$device, levels =  c("PLASMA", "WHATMAN", "MITRA", "CAPITAINER", "BLOOD"))
-sex <- res$sex
+device <- factor(x = res$device, levels =  c("PLASMA", "WHATMAN", "MITRA",
+                                             "CAPITAINER", "BLOOD"))
+sex <- factor(res$sex)
 # design <- model.matrix(~ device + sex + participants)
 # As there are NA values in one of the participants we need to continue without participants. 
 
@@ -1301,7 +1406,38 @@ bellow.
 
 NOTE: modify table adding columns from p-value in each device.
 
-### Table of signigicant features
+Compared to plasma samples, very large differences in feature abundances can be
+observed. We next directly compare the coefficients of the different devices to
+evaluate whether there might be differences also between devices.
+
+```{r}
+par(mfrow = c(1, 3))
+plot(rowData(res)$coef.M, rowData(res)$coef.W, pch = 21, col = "#00000060",
+     bg = "#00000020", xlab = expression(coef[Mitra]),
+     ylab = expression(coef[Whatman]))
+grid()
+abline(0, 1)
+plot(rowData(res)$coef.M, rowData(res)$coef.C, pch = 21, col = "#00000060",
+     bg = "#00000020", xlab = expression(coef[Mitra]),
+     ylab = expression(coef[Capitainer]))
+grid()
+abline(0, 1)
+plot(rowData(res)$coef.W, rowData(res)$coef.C, pch = 21, col = "#00000060",
+     bg = "#00000020", xlab = expression(coef[Whatman]),
+     ylab = expression(coef[Capitainer]))
+grid()
+abline(0, 1)
+
+```
+
+While over and above the abundances between the microsampling devices are
+similar/correlated, there is a distinct set of features with relatively low
+abundances in Mitra, while in the other two microsampling devices the abundances
+are higher. A similar observation can be made in the comparison between Whatman
+and Capitainer.
+
+
+### Table of significant features
 
 ```{r significant-features-plasma}
 # Table of significant features in all groups
@@ -1317,6 +1453,33 @@ tab <- rowData(res)[rowData(res)$significant.W,
 tab <- tab[order(abs(tab$coef.W), decreasing = TRUE), ]
 kable(tab, format = "pipe")
 ```
+
+And a heatmap of the features that are significant for at least one
+microsampling device:
+
+```{r}
+amap <- log2(assay(res, "norm_imputed"))
+#' center the abundances by row (features) as we're only interested in
+#' relative abundance differences between devices
+amap <- amap - rowMeans(amap)
+#' restrict to features that are significant for at leat one device
+amap <- amap[rowData(res)$significant.M | rowData(res)$significant.W |
+             rowData(res)$significant.B | rowData(res)$significant.C, ]
+
+ann <- data.frame(device = colData(res)$device)
+rownames(ann) <- colnames(amap)
+
+pheatmap(amap, show_rownames = FALSE, show_colnames = FALSE,
+         annotation_col = ann, annotation_colors = list(device = leg_full))
+
+```
+
+There is a set of features with consistently higher abundances in microsampling
+devices compared to blood or plasma. Another set of features shows similarly
+high abundances in Capitainer and Whatman, while lower abundances are present
+for Mitra, Blood and Plasma. Yet another set of features has lower
+concentrations in Plasma, while higher abundances are present for all other
+sample types.
 
 Below we visualise the EICs of the significant features to evaluate their
 signal. We restrict the MS data set to study samples. Parameters: - keepFeatures
@@ -1361,8 +1524,11 @@ save(res_sts, file = "res_sts.RData")
 
 ##### Linear Model with participants
 
-The same way we compared in a linear model all the devices adn references samples taking into account the sex variable, now we include participants as a cofactor. In that case, Limma is returning NA value for the 10th participant and giving error, but for the rest, I will compare the coef.W and -log10 pvalue using both models.  
-
+The same way we compared in a linear model all the devices adn references
+samples taking into account the sex variable, now we include participants as a
+cofactor. In that case, Limma is returning NA value for the 10th participant and
+giving error, but for the rest, I will compare the coef.W and -log10 pvalue
+using both models.
 
 ```{r lm-participants}
 #' Define the linear model to be applied to the data
@@ -1370,8 +1536,9 @@ p.cut <- 0.05     # cut-off for significance.
 m.cut <- 0.5      # cut-off for log2 fold change
 
 #' Define the linear model to be applied to the data using participants as a factor
-device <- factor(x = res$device, levels =  c("PLASMA", "WHATMAN", "MITRA", "CAPITAINER", "BLOOD"))
-sex <- res$sex
+device <- factor(x = res$device, levels =  c("PLASMA", "WHATMAN", "MITRA",
+                                             "CAPITAINER", "BLOOD"))
+sex <- factor(res$sex)
 participants <- factor(res$participants)
 design_part <- model.matrix(~ device + sex + participants)
 
@@ -1430,22 +1597,36 @@ rowData(res) <- cbind(rowData(res), tmp_part)
 ```{r}
 # Comparison of Coef in WHATMAN between two models. 
 
+par(mfrow = c(1, 2))
 #' Plot the values against each other (in log2 scale)
 plot(rowData(res)$coef.W, rowData(res)$coef.W.p,
      xlim = range(c(rowData(res)$coef.W, rowData(res)$coef.W.p)),
      ylim = range(c(rowData(res)$coef.W, rowData(res)$coef.W.p)), 
      pch = 21, bg = "#00000020", col = "#00000080",  
-     xlab = "y~ device + sex",
-     ylab = "y~ device + sex + participants", 
-     main = "Whatman Coeficients comparison"
+     xlab = "y ~ device + sex",
+     ylab = "y ~ device + sex + participants", 
+     main = "Whatman Coefficients comparison"
      )
 grid()
 abline(0, 1)
+
+plot(-log10(rowData(res)$pvalue.W), -log10(rowData(res)$pvalue.W.p),
+     pch = 21, bg = "#00000020", col = "#00000080",  
+     xlab = "y ~ device + sex",
+     ylab = "y ~ device + sex + participants", 
+     main = "Whatman -log10 p-values comparison"
+     )
+grid()
+abline(0, 1)
+
 ```
+
+The coefficients are identical while the p-values differ between the two models.
 
 ```{r}
 # Comparison of Coef in MITRA between two models. 
 
+par(mfrow = c(1, 2))
 #' Plot the values against each other (in log2 scale)
 plot(rowData(res)$coef.M, rowData(res)$coef.M.p,
      xlim = range(c(rowData(res)$coef.M, rowData(res)$coef.M.p)),
@@ -1457,11 +1638,22 @@ plot(rowData(res)$coef.M, rowData(res)$coef.M.p,
      )
 grid()
 abline(0, 1)
+
+plot(-log10(rowData(res)$pvalue.M), -log10(rowData(res)$pvalue.M.p),
+     pch = 21, bg = "#00000020", col = "#00000080",  
+     xlab = "y ~ device + sex",
+     ylab = "y ~ device + sex + participants", 
+     main = "Mitra -log10 p-values comparison"
+     )
+grid()
+abline(0, 1)
+
 ```
 
 ```{r}
 # Comparison of Coef in CAPITAINER between two models. 
 
+par(mfrow = c(1, 2))
 #' Plot the values against each other (in log2 scale)
 plot(rowData(res)$coef.C, rowData(res)$coef.C.p,
      xlim = range(c(rowData(res)$coef.C, rowData(res)$coef.C.p)),
@@ -1473,11 +1665,21 @@ plot(rowData(res)$coef.C, rowData(res)$coef.C.p,
      )
 grid()
 abline(0, 1)
+
+plot(-log10(rowData(res)$pvalue.C), -log10(rowData(res)$pvalue.C.p),
+     pch = 21, bg = "#00000020", col = "#00000080",  
+     xlab = "y ~ device + sex",
+     ylab = "y ~ device + sex + participants", 
+     main = "Capitainer -log10 p-values comparison"
+     )
+grid()
+abline(0, 1)
 ```
 
 ```{r}
 # Comparison of Coef in BLOOD between two models. 
 
+par(mfrow = c(1, 2))
 #' Plot the values against each other (in log2 scale)
 plot(rowData(res)$coef.B, rowData(res)$coef.B.p,
      xlim = range(c(rowData(res)$coef.B, rowData(res)$coef.B.p)),
@@ -1486,6 +1688,15 @@ plot(rowData(res)$coef.B, rowData(res)$coef.B.p,
      xlab = "y~ device + sex",
      ylab = "y~ device + sex + participants", 
      main = "Blood Coeficients comparison"
+     )
+grid()
+abline(0, 1)
+
+plot(-log10(rowData(res)$pvalue.B), -log10(rowData(res)$pvalue.B.p),
+     pch = 21, bg = "#00000020", col = "#00000080",  
+     xlab = "y ~ device + sex",
+     ylab = "y ~ device + sex + participants", 
+     main = "Blood -log10 p-values comparison"
      )
 grid()
 abline(0, 1)
@@ -1508,8 +1719,9 @@ m.cut <- 0.5      # cut-off for log2 fold change
 # The algorithm takes the first group as reference, so levels must be changed: 
 
 #' Define the linear model to be applied to the data
-device <- factor(x = res$device, levels = c("BLOOD", "WHATMAN", "MITRA", "CAPITAINER", "PLASMA"))
-sex <- res$sex
+device <- factor(x = res$device, levels = c("BLOOD", "WHATMAN", "MITRA",
+                                            "CAPITAINER", "PLASMA"))
+sex <- factor(res$sex)
 # design <- model.matrix(~ device + sex + participants)
 # As there are NA values in one of the participants we need to continue without participants. 
 design <- model.matrix(~ device + sex)
@@ -1736,9 +1948,9 @@ tmp_W <- data.frame(
     avg.S = rowMeans(
         log2(assay(res, "norm_imputed")[,res$device == "SEX"]))
 )
-tmp$significant.M <- tmp_W$adjp.M < 0.05
-tmp$significant.C <- tmp_W$adjp.C < 0.05
-tmp$significant.S <- tmp_W$adjp.S < 0.05
+tmp_W$significant.M <- tmp_W$adjp.M < 0.05
+tmp_W$significant.C <- tmp_W$adjp.C < 0.05
+tmp_W$significant.S <- tmp_W$adjp.S < 0.05
 
 #' Add differential abundance results to the object's rowData
 rowData(res) <- cbind(rowData(res), tmp_W)
@@ -2254,5 +2466,8 @@ tab <- tab[order(abs(tab$coef.S), decreasing = TRUE), ]
 kable(tab, format = "pipe")
 ```
 
-We can confirm that devices are no able to bring significant differences between men and women. Only one feature in plasma was significantly different between women and men with a adjusted pvalue > 0.05.
+We can confirm that devices are no able to bring significant differences between
+men and women. Only one feature in plasma was significantly different between
+women and men with a adjusted pvalue > 0.05.
+
 
