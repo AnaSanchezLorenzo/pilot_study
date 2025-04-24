@@ -1194,7 +1194,7 @@ assignment and sex of each individual.
 
 ### Linear model
 
-```{r lm plasma}
+```{r lm-plasma}
 #' Define the linear model to be applied to the data
 p.cut <- 0.05     # cut-off for significance.
 m.cut <- 0.5      # cut-off for log2 fold change
@@ -1220,7 +1220,7 @@ fit
 
 Extract the results:
 
-```{r result-df-plasma}
+```{r}
 #' Compile a result data frame, do we do one data.frame per device ? or for the full thing ? 
 tmp <- data.frame(
     coef.W = fit$coefficients[, "deviceWHATMAN"],
@@ -1265,7 +1265,7 @@ Now we visualise the distribution of the raw and adjusted p-values:
 
 ### Distribution pvalues
 
-```{r distribution-pvalues-plasma}
+```{r}
 #' Plot the distribution of p-values in Whatman
 par(mfrow = c(1, 2))
 hist(rowData(res)$pvalue.W, breaks = 64, xlab = "p value",
@@ -1322,7 +1322,7 @@ are significantly different between the two study groups.
 
 ### Volcano plot
 
-```{r volcano-plot-plasma}
+```{r}
 #' Plot volcano plot of the statistical results - Whatman
 par(mfrow = c(1, 1), mar = c(5, 5, 5, 1))
 plot(rowData(res)$coef.W, -log10(rowData(res)$adjp.W),
@@ -1548,7 +1548,7 @@ fit_part <- eBayes(fit_part) # calculate p-value
 fit_part
 ```
 
-```{r result-df-participants}
+```{r}
 #' Compile a result data frame. 
 
 tmp_part <- data.frame(
@@ -1771,7 +1771,7 @@ Now we visualise the distribution of the raw and adjusted p-values:
 
 ### Distribution pvalues
 
-```{r distribution-pvalues-blood}
+```{r}
 #' Plot the distribution of p-values in Whatman
 par(mfrow = c(1, 2))
 hist(rowData(res)$pvalue.W, breaks = 64, xlab = "p value",
@@ -1811,7 +1811,7 @@ hist(rowData(res)$adjp.S, breaks = 64, xlab = expression(p[BH]~value),
 
 ### Volcano plot
 
-```{r volcano-plot-blood}
+```{r}
 #' Plot volcano plot of the statistical results - Whatman
 par(mfrow = c(1, 1), mar = c(5, 5, 5, 1))
 plot(rowData(res)$coef.W, -log10(rowData(res)$adjp.W),
@@ -1881,7 +1881,7 @@ bellow.
 
 ### Table of signigicant features
 
-```{r significant-features-plasma}
+```{r}
 # Table of significant features in all groups
 tab_B <- rowData(res)[rowData(res)$significant.W,
                     c("mzmed", "rtmed", 
@@ -1901,7 +1901,7 @@ I also try to compare between devices as an example:
 
 ### Linear model
 
-```{r lm-whatman}
+```{r}
 #' Define the linear model to be applied to the data
 p.cut <- 0.05     # cut-off for significance.
 m.cut <- 0.5      # cut-off for log2 fold change
@@ -1957,7 +1957,7 @@ Now we visualise the distribution of the raw and adjusted p-values:
 
 ### Distribution pvalues
 
-```{r distribution-pvalues-3-whatman}
+```{r}
 
 #' Plot the distribution of p-values in Mitra
 par(mfrow = c(1, 2))
@@ -1981,7 +1981,7 @@ hist(rowData(res)$adjp.C, breaks = 64, xlab = expression(p[BH]~value),
 
 ### Volcano plot
 
-```{r volcano-plot-whatman}
+```{r}
 #' Plot volcano plot of the statistical results - Mitra
 par(mfrow = c(1, 1), mar = c(5, 5, 5, 1))
 plot(rowData(res)$coef.M, -log10(rowData(res)$adjp.M),
@@ -2034,7 +2034,7 @@ overfitting the lm?
 
 ### Table of signigicant features
 
-```{r significant-features-plasma}
+```{r}
 # Table of significant features in all groups
 tab_devices <- rowData(res)[rowData(res)$significant.W,
                     c("mzmed", "rtmed", 
@@ -2056,7 +2056,7 @@ metabolite in each sample, using sex as a binary variable with women/men. The
 aim is to study if each device of reference sample is able to find significant
 differences related with the sex.
 
-```{r lm plasma}
+```{r}
 #' Define the linear model to be applied to the data
 p.cut <- 0.05     # cut-off for significance.
 m.cut <- 0.5      # cut-off for log2 fold change
@@ -2074,7 +2074,7 @@ fit
 
 Extract the results:
 
-```{r result-df-plasma}
+```{r}
 #' Compile a result data frame, do we do one data.frame per device ? or for the full thing ? 
 tmp <- data.frame(
     coef.S = fit$coefficients[, "sexW"],
@@ -2094,7 +2094,7 @@ Now we visualise the distribution of the raw and adjusted p-values:
 
 ### Distribution pvalues
 
-```{r distribution-pvalues-plasma}
+```{r}
 #' Plot the distribution of p-values in Sex
 par(mfrow = c(1, 2))
 hist(rowData(res_w)$pvalue.S, breaks = 64, xlab = "p value",
@@ -2107,7 +2107,7 @@ hist(rowData(res_w)$adjp.S, breaks = 64, xlab = expression(p[BH]~value),
 
 ### Volcano plot - Whatman y \~ sex
 
-```{r volcano-plot-plasma}
+```{r}
 #' Plot volcano plot of the statistical results - sex
 par(mfrow = c(1, 1), mar = c(5, 5, 5, 1))
 plot(rowData(res_w)$coef.S, -log10(rowData(res_w)$adjp.S),
@@ -2126,7 +2126,7 @@ if (any(rowData(res_w)$significant.S)) {
 
 ### Table of signigicant features
 
-```{r significant-features-plasma}
+```{r}
 # Table of significant features in all groups
 tab <- rowData(res_w)[rowData(res_w)$significant.S,
                     c("mzmed", "rtmed", 
@@ -2138,7 +2138,7 @@ kable(tab, format = "pipe")
 
 ## LINEAR MODEL - Mitra y \~ sex
 
-```{r lm plasma}
+```{r lm-mitra}
 #' Define the linear model to be applied to the data
 p.cut <- 0.05     # cut-off for significance.
 m.cut <- 0.5      # cut-off for log2 fold change
@@ -2156,7 +2156,7 @@ fit
 
 Extract the results:
 
-```{r result-df-plasma}
+```{r}
 #' Compile a result data frame, do we do one data.frame per device ? or for the full thing ? 
 tmp <- data.frame(
     coef.S = fit$coefficients[, "sexW"],
@@ -2176,7 +2176,7 @@ Now we visualise the distribution of the raw and adjusted p-values:
 
 ### Distribution pvalues
 
-```{r distribution-pvalues-plasma}
+```{r}
 #' Plot the distribution of p-values in Sex
 par(mfrow = c(1, 2))
 hist(rowData(res_m)$pvalue.S, breaks = 64, xlab = "p value",
@@ -2189,7 +2189,7 @@ hist(rowData(res_m)$adjp.S, breaks = 64, xlab = expression(p[BH]~value),
 
 ### Volcano plot - Mitra \~ sex
 
-```{r volcano-plot-plasma}
+```{r}
 #' Plot volcano plot of the statistical results - sex
 par(mfrow = c(1, 1), mar = c(5, 5, 5, 1))
 plot(rowData(res_m)$coef.S, -log10(rowData(res_m)$adjp.S),
@@ -2208,7 +2208,7 @@ if (any(rowData(res_m)$significant.S)) {
 
 ### Table of signigicant features
 
-```{r significant-features-plasma}
+```{r}
 # Table of significant features in all groups
 tab <- rowData(res_m)[rowData(res_m)$significant.S,
                     c("mzmed", "rtmed", 
@@ -2220,7 +2220,7 @@ kable(tab, format = "pipe")
 
 ## LINEAR MODEL - Capitainer y \~ sex
 
-```{r lm plasma}
+```{r lm-capitainer}
 #' Define the linear model to be applied to the data
 p.cut <- 0.05     # cut-off for significance.
 m.cut <- 0.5      # cut-off for log2 fold change
@@ -2238,7 +2238,7 @@ fit
 
 Extract the results:
 
-```{r result-df-plasma}
+```{r}
 #' Compile a result data frame, do we do one data.frame per device ? or for the full thing ? 
 tmp <- data.frame(
     coef.S = fit$coefficients[, "sexW"],
@@ -2258,7 +2258,7 @@ Now we visualise the distribution of the raw and adjusted p-values:
 
 ### Distribution pvalues
 
-```{r distribution-pvalues-plasma}
+```{r}
 #' Plot the distribution of p-values in Sex
 par(mfrow = c(1, 2))
 hist(rowData(res_c)$pvalue.S, breaks = 64, xlab = "p value",
@@ -2271,7 +2271,7 @@ hist(rowData(res_c)$adjp.S, breaks = 64, xlab = expression(p[BH]~value),
 
 ### Volcano plot - Capitainer y \~ sex
 
-```{r volcano-plot-plasma}
+```{r}
 #' Plot volcano plot of the statistical results - sex
 par(mfrow = c(1, 1), mar = c(5, 5, 5, 1))
 plot(rowData(res_w)$coef.S, -log10(rowData(res_w)$adjp.S),
@@ -2290,7 +2290,7 @@ if (any(rowData(res_w)$significant.S)) {
 
 ### Table of signigicant features
 
-```{r significant-features-plasma}
+```{r}
 # Table of significant features in all groups
 tab <- rowData(res_w)[rowData(res_w)$significant.S,
                     c("mzmed", "rtmed", 
@@ -2302,7 +2302,7 @@ kable(tab, format = "pipe")
 
 ## LINEAR MODEL - Plasma y \~ sex
 
-```{r lm plasma}
+```{r lm-sex}
 #' Define the linear model to be applied to the data
 p.cut <- 0.05     # cut-off for significance.
 m.cut <- 0.5      # cut-off for log2 fold change
@@ -2320,7 +2320,7 @@ fit
 
 Extract the results:
 
-```{r result-df-plasma}
+```{r}
 #' Compile a result data frame, do we do one data.frame per device ? or for the full thing ? 
 tmp <- data.frame(
     coef.S = fit$coefficients[, "sexW"],
@@ -2340,7 +2340,7 @@ Now we visualise the distribution of the raw and adjusted p-values:
 
 ### Distribution pvalues
 
-```{r distribution-pvalues-plasma}
+```{r}
 #' Plot the distribution of p-values in Sex
 par(mfrow = c(1, 2))
 hist(rowData(res_p)$pvalue.S, breaks = 64, xlab = "p value",
@@ -2353,7 +2353,7 @@ hist(rowData(res_p)$adjp.S, breaks = 64, xlab = expression(p[BH]~value),
 
 ### Volcano plot - Plasma y \~ sex
 
-```{r volcano-plot-plasma}
+```{r}
 #' Plot volcano plot of the statistical results - sex
 par(mfrow = c(1, 1), mar = c(5, 5, 5, 1))
 plot(rowData(res_p)$coef.S, -log10(rowData(res_p)$adjp.S),
@@ -2372,7 +2372,7 @@ if (any(rowData(res_p)$significant.S)) {
 
 ### Table of signigicant features
 
-```{r significant-features-plasma}
+```{r}
 # Table of significant features in all groups
 tab <- rowData(res_p)[rowData(res_p)$significant.S,
                     c("mzmed", "rtmed", 
@@ -2384,7 +2384,7 @@ kable(tab, format = "pipe")
 
 ## LINEAR MODEL - Blood y \~ sex
 
-```{r lm plasma}
+```{r}
 #' Define the linear model to be applied to the data
 p.cut <- 0.05     # cut-off for significance.
 m.cut <- 0.5      # cut-off for log2 fold change
@@ -2402,7 +2402,7 @@ fit
 
 Extract the results:
 
-```{r result-df-plasma}
+```{r}
 #' Compile a result data frame, do we do one data.frame per device ? or for the full thing ? 
 tmp <- data.frame(
     coef.S = fit$coefficients[, "sexW"],
@@ -2422,7 +2422,7 @@ Now we visualise the distribution of the raw and adjusted p-values:
 
 ### Distribution pvalues
 
-```{r distribution-pvalues-plasma}
+```{r}
 #' Plot the distribution of p-values in Sex
 par(mfrow = c(1, 2))
 hist(rowData(res_b)$pvalue.S, breaks = 64, xlab = "p value",
@@ -2435,7 +2435,7 @@ hist(rowData(res_b)$adjp.S, breaks = 64, xlab = expression(p[BH]~value),
 
 ### Volcano plot - Blood y \~ sex
 
-```{r volcano-plot-plasma}
+```{r}
 #' Plot volcano plot of the statistical results - sex
 par(mfrow = c(1, 1), mar = c(5, 5, 5, 1))
 plot(rowData(res_b)$coef.S, -log10(rowData(res_b)$adjp.S),
@@ -2454,7 +2454,7 @@ if (any(rowData(res_b)$significant.S)) {
 
 ### Table of signigicant features
 
-```{r significant-features-plasma}
+```{r}
 # Table of significant features in all groups
 tab <- rowData(res_b)[rowData(res_b)$significant.S,
                     c("mzmed", "rtmed", 
