@@ -198,7 +198,6 @@ mtch <- matchValues(res_sts, target_df, param = parm,
 mtch
 ```
 
-
 ```{r}
 #added
 parm_mzrt <- MzRtParam(tolerance = 0, ppm = 10,
@@ -207,6 +206,7 @@ mtch_mzrt <- matchValues(res_sts, target_df, param = parm_mzrt,
                     rtColname = "rtmed", mzColname = c("mzmed", "mz"))
 mtch_mzrt
 ```
+
 ```{r}
 #' Extracting the results
 mtch_res_2 <- matchedData(mtch_mzrt, c("feature_id", "mzmed", "rtmed", 
@@ -222,17 +222,16 @@ write_xlsx(mtch_res_2_df, "mtch_res_2_output.xlsx")
 #filter only present in query. 
 ```
 
-- check biocrates annotation
-- MS1: manual curation. Do Ms2 individually. 
+-   check biocrates annotation
+-   MS1: manual curation. Do Ms2 individually.
 
 After matching mz and rt, as expected, we have less matches with the target
 object (159 at of 378 annotations; only mz = 226/378). However, it is finding
 same compound at different rts in query object. In total, we will have 245
 annotations but we will have not manually check those ones. I will continue the
-annotation with this matched object. 
-NOTE: the res object has not being filter by only significant. I doing with all 
-dataset. After general annotation, filter by features of interest depending if 
-it present or not in each device. 
+annotation with this matched object. NOTE: the res object has not being filter
+by only significant. I doing with all dataset. After general annotation, filter
+by features of interest depending if it present or not in each device.
 
 The result object (mtch) contains the full query data.frame and target
 data.frame as well as the matching information. To visualize the info from mtch:
@@ -325,19 +324,18 @@ nrow(mtch_res)
 # write_xlsx(mtch_res_df, "mtch_res_output.xlsx")
 ```
 
-Only 195 matches were unique features. However, now adducts to not match with 
-the proposed adduct in the library. I am filtering again to keep only the 
-annotations that have the adduct from the library. For this I am using 
+Only 195 matches were unique features. However, now adducts to not match with
+the proposed adduct in the library. I am filtering again to keep only the
+annotations that have the adduct from the library. For this I am using
 "target_ion" to show the adduct from library and "adduct" as the m/z calculated
-for the match. 
-NOTE: Does it make sense?
-
+for the match. NOTE: Does it make sense?
 
 ```{r}
 # Filter rows where 'adduct' and 'target_ion' are the same
 mtch_res_filtered <- mtch_res[mtch_res$adduct == mtch_res$target_ion, ] 
 nrow(mtch_res_filtered)
 ```
+
 Only 77 compounds have the same ion.
 
 ```{r}
@@ -346,8 +344,7 @@ Only 77 compounds have the same ion.
 # write_xlsx(mtch_res_filtered_df, "mtch_res_filtered_output.xlsx")
 ```
 
-FIX: add names of all sign features. 
-While being of low confidence, MS1-based
+FIX: add names of all sign features. While being of low confidence, MS1-based
 annotation can provide first candidate annotations that could be confirmed or
 rejected by additional analyses.
 
@@ -379,8 +376,8 @@ In total we have 4 measurements from each samples with different mz ranges:
 This was performed because we experienced a mass sensibility issue in the
 instrument and by decreasing the mz range sensibility can increase.
 
-After testing different samples, we decided to continue with all samples as we 
-will obtain the maximum number of possible compounds fragmentated. 
+After testing different samples, we decided to continue with all samples as we
+will obtain the maximum number of possible compounds fragmentated.
 
 ```{r import-files}
 #' read the sample descriptions from an xlsx sheet
@@ -428,15 +425,16 @@ spectra(lcms2) |>
     lapply(table) |>
     do.call(what = cbind)
 ```
-Mainly all samples have similar number of spectra in MS1 and MS2, which is not
-normal. We only see 4 samples with big difference (>800 scans): 3 (MS1 2087/ 
-MS2 1353), 15 (MS1 2538, MS2 938), 19 (MS1 2246, MS2 1060), 27 (MS1 1974, 
-MS2 1174) . This is associated with instrument and method problem. 
 
-Actually, all samples from m/z range 800-1200Da have less scans than the others. 
+Mainly all samples have similar number of spectra in MS1 and MS2, which is not
+normal. We only see 4 samples with big difference (\>800 scans): 3 (MS1 2087/
+MS2 1353), 15 (MS1 2538, MS2 938), 19 (MS1 2246, MS2 1060), 27 (MS1 1974, MS2
+1174) . This is associated with instrument and method problem.
+
+Actually, all samples from m/z range 800-1200Da have less scans than the others.
 IMPORTANT!
 
-LAB: modify and test MS2 method. 
+LAB: modify and test MS2 method.
 
 ```{r}
 sampleData(lcms2)$sample_name
@@ -542,8 +540,8 @@ target$rtmin <- target$rtmin - 2
 target$rtmax <- target$rtmax + 2
 ```
 
-NOTE: here i am not selecting sign feature, there is only a column with info 
-saying if it is significant or not. 
+NOTE: here i am not selecting sign feature, there is only a column with info
+saying if it is significant or not.
 
 Here is were target should get all data related with sig features. We next
 *identify the fragment spectra* with their precursor m/z and retention times
@@ -676,8 +674,7 @@ matched at least one reference fragment.
 ```
 
 The annotations seem to be repeated in most of the cases. So I will need to
-filter so that I only have one annotation to each feature define. 
-
+filter so that I only have one annotation to each feature define.
 
 Now, we have query-target pairs with a spectra similarity higher than 0.6.
 
@@ -713,9 +710,9 @@ ms2_GNPS_result$rtmed <- res_sts_df[ms2_GNPS_result$feature_id, "rtmed"]
 write_xlsx(ms2_GNPS_result, "ms2_GNPS_results_rtime.xlsx")
 ```
 
-added rtmed to check if the rtime from spectra is different. Calculate difference
-NOTE: Filter consecutive features manually and same features matched with 
-different compounds.
+added rtmed to check if the rtime from spectra is different. Calculate
+difference NOTE: Filter consecutive features manually and same features matched
+with different compounds.
 
 We below plot the EIC for this feature highlighting the retention time at which
 the highest scoring MS2 spectra was recorded and create a mirror plot comparing
@@ -776,6 +773,7 @@ ms2_GNPS_result$sign_in_device <- apply(ms2_GNPS_result, 1, function(row) {
 })
 ms2_GNPS_result
 ```
+
 Now, we should be able to plot EIC of significant features present only in the
 devices where they are significant. For this:
 
@@ -825,16 +823,16 @@ for (i in seq_len(nrow(ms2_GNPS_result))) {
 
 -   FIX the colors.
 
--   NOTE: we should expect 279 EIC? 
+-   NOTE: we should expect 279 EIC?
 
-- Change code. Plot in all samples, do only in specific groups per device by 
-subseting each device. 
--   Before plotting all groups. Now only plotting whatman and plasma. 
+-   Change code. Plot in all samples, do only in specific groups per device by
+    subseting each device.
+
+-   Before plotting all groups. Now only plotting whatman and plasma.
+
 -   We only got 128 EIC instead of 279 expected ?????
 
-
-Mirror spectra:
-FIX: plot only mirror spectra with highest score. 
+Mirror spectra: FIX: plot only mirror spectra with highest score.
 
 ```{r}
 fts <- unique(ms2_GNPS_mtch$feature_id)
@@ -869,16 +867,14 @@ for (ft in fts) {
 }
 ```
 
-we got ~3000 features with mirror spectra. 
-How can I choose between q and t repeated mirror spectra. 
+we got \~3000 features with mirror spectra. How can I choose between q and t
+repeated mirror spectra.
 
-Next steps: 
+Next steps:
 
-- manually detect consecutive features annotated and repeated annotations
-- Filter those features
-- Change EIC code: split annotation sign per device and then plot it. 
-- Create final list of annotation to start working with and reviewing MS2 spectra
-- Heatmap per device
-- Unique features: show plan. 
-
-
+-   manually detect consecutive features annotated and repeated annotations
+-   Filter those features
+-   Change EIC code: split annotation sign per device and then plot it.
+-   Create final list of annotation to start working with and reviewing MS2
+    spectra
+-   Heatmap per device (Ms1 data first)
