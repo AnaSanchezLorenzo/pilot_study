@@ -67,7 +67,7 @@ In this case, we only import the SumExp with significant features details
 # Data import
 load("preprocessed_lcms1.RData")
 load("res_sts.RData")
-featureDefinitions(lcms1) |>head()
+featureDefinitions(lcms1) |> head()
 ```
 
 ```{r indexing, message=FALSE}
@@ -172,7 +172,7 @@ rowData(res_sts)$feature_id <- rownames(rowData(res_sts))
 rowData(res_sts)
 # Convert to data frame
 res_sts_df <- as.data.frame(rowData(res_sts))
-res_sts_df
+res_sts_df |> head()
 ```
 
 Now, we do the matching in comparison with the target dataframe with reference
@@ -182,44 +182,53 @@ include those adducts.
 The resulting Matched object (with 10 ppm) with mz and rt values shows that 177
 out of 2454 significant features were matched against at least one target
 compound. Out of the 378 identify ions in NPC library, we are able to match 159
-features. If we try to do MS1 annotation matching m/z abd retention time values,
+features. If we try to do MS1 annotation matching m/z and retention time values,
 we expect the match to be more accurate because rt will restrict the match and
 if features are detected across the analysis it will only identify the features
-that matched with biological compounds:
-
-```{r}
-parm <- Mass2MzRtParam(adducts = c("[M+H]+", "[M+Na]+", "[M+NH4]+", 
-                                   "[M+H-H2O]+",  "[M+K]+", "[M]+"),
-                       tolerance = 0, ppm = 10,
-                       toleranceRt = 10) # here will be to change rt tolerance(sec). 
-mtch <- matchValues(res_sts, target_df, param = parm,
-                                rtColname = "rtmed", mzColname = "mzmed", 
-     massColname = "Monoisotopic_mass")
-mtch
-```
+that matched with biological compounds. The reference library provides already
+the m/z of the (validated) ions of the detected compounds. We will thus directly
+match the *experimental* m/z of the features against these reference m/z
+values. 
 
 ```{r}
 #added
 parm_mzrt <- MzRtParam(tolerance = 0, ppm = 10,
                        toleranceRt = 10) # here will be to change rt tolerance(sec). 
 mtch_mzrt <- matchValues(res_sts, target_df, param = parm_mzrt,
-                    rtColname = "rtmed", mzColname = c("mzmed", "mz"))
+                         rtColname = "rtmed", mzColname = c("mzmed", "mz"))
 mtch_mzrt
 ```
 
 ```{r}
 #' Extracting the results
 mtch_res_2 <- matchedData(mtch_mzrt, c("feature_id", "mzmed", "rtmed", 
-                                "target_ion", "ppm_error", 
-                                "target_chemicalFormula", 
-                                "target_cpdName", "target_InChI", 
-                                "coef.W", "coef.M", "coef.C", "coef.B", 
-                                "adjp.W", "adjp.M", "adjp.C", "adjp.B" ))
+                                       "target_ion", "ppm_error", 
+                                       "target_chemicalFormula", 
+                                       "target_cpdName", "target_InChI", 
+                                       "coef.W", "coef.M", "coef.C", "coef.B", 
+                                       "adjp.W", "adjp.M", "adjp.C", "adjp.B" ))
 
 mtch_res_2
 mtch_res_2_df <- as.data.frame(mtch_res_2)
 write_xlsx(mtch_res_2_df, "mtch_res_2_output.xlsx")
-#filter only present in query. 
+#' filter only present in query. 
+```
+
+With this approach we identified however **only** features matching the ions
+reported in the reference library. As an alternative, we could also use the
+exact (monoisotopic) mass of the reference compounds, calculate all possible
+(potential) ions/adducts from that and use the m/z values of these to annotate
+features. The code for that is shown (but not evaluated) below.
+
+```{r, eval = FALSE}
+parm <- Mass2MzRtParam(adducts = c("[M+H]+", "[M+Na]+", "[M+NH4]+", 
+                                   "[M+H-H2O]+",  "[M+K]+", "[M]+"),
+                       tolerance = 0, ppm = 10,
+                       toleranceRt = 10) # here will be to change rt tolerance(sec). 
+mtch <- matchValues(res_sts, target_df, param = parm,
+                    rtColname = "rtmed", mzColname = "mzmed", 
+                    massColname = "Monoisotopic_mass")
+mtch
 ```
 
 -   check biocrates annotation
@@ -237,7 +246,7 @@ The result object (mtch) contains the full query data.frame and target
 data.frame as well as the matching information. To visualize the info from mtch:
 
 ```{r visualisation1}
-head(query(mtch))
+head(query(mtch_mzrt))
 ```
 
 ```{r visualisation2}
@@ -256,10 +265,141 @@ head(query(mtch))
 # colnames(mtch)
 ```
 
+The `mtch_mzrt` variable contains the matching result, but also the full query
+and target objects used for the matching. The data is organized along the query
+object, i.e. the length of the `Matched` object is the same as the query object
+had rows:
+
+```{r}
+length(mtch_mzrt)
+nrow(res_sts)
+```
+
+We can restrict the results to specific rows in query, i.e. if we want to know
+the matching results for e.g. the row (feature) with index 13:
+
+```{r}
+mtch_mzrt[13]
+```
+
+This feature could however not be annotated (we have 0 matches against the
+target library). The `whichQuery()` function can be used to get the indices of
+features in *query* for which a match could be found:
+
+```{r}
+whichQuery(mtch_mzrt)
+```
+
+We next use this function to subset the result object to features that could be
+annotated to at least one compound in the target library.
+
+```{r}
+mtch_mzrt <- mtch_mzrt[whichQuery(mtch_mzrt)]
+```
+
+The table below shows all matches.
+
+```{r, results = "asis"}
+tmp <- matchedData(mtch_mzrt,
+                   c("feature_id", "mzmed", "ppm_error", "rtmed",
+                     "score_rt", "target_cpdID", "target_cpdName")) |>
+    as.data.frame()
+rownames(tmp) <- NULL
+pandoc.table(tmp, style = "rmarkdown", split.table = Inf)
+```
+
+There are thus some features matching multiple compounds, but most of them seem
+to be isomers - and with the chosen retention time tolerance (10 seconds) we can
+not reliably assign them.
+
+We next extract the ion chromatograms for the annotated features and indicate in
+the plot also the retention time from the target reference library. An example
+for such a plot is shown below while all plots are exported to individuals png
+files.
+
+```{r}
+mtch_mzrt_eic <- featureChromatograms(
+    lcms1, features = rowData(query(mtch_mzrt))$feature_id, expandRt = 10)
+col_sample <- leg_full[sampleData(lcms1)$device]
+
+#' Create an example plot
+i <- 2
+a <- mtch_mzrt_eic[i, ]
+col_peaks <- col_sample[chromPeaks(a)[, "sample"]]
+plot(a, col = paste0(col_sample, 40), peakBg = paste0(col_peaks, 20),
+     peakCol = paste0(col_peaks, 80))
+maxy <- max(chromPeaks(a)[, "maxo"])
+#' indicate the retention time of the feature
+abline(v = mtch_mzrt[i]$rtmed, col = "grey", lty = 2)
+#' indicate the retention time of the matched target compounds
+points(mtch_mzrt[i]$target_rtmed, maxy * 0.75, lty = 2, type = "h")
+text(mtch_mzrt[i]$target_rtmed, maxy * 0.75,
+     labels = mtch_mzrt[i]$target_cpdID, pos = 3)
+grid()
+
+
+dr <- file.path("images", "ms1_matched_features")
+dir.create(dr, recursive = TRUE, showWarnings = FALSE)
+
+#' Run that code within a loop to export all peaks
+for (i in seq_along(mtch_mzrt)) {
+    a <- mtch_mzrt_eic[i, ]
+    png(paste0(dr, "/", mtch_mzrt[i]$feature_id[1L], ".png"),
+        width = 12, height = 8, units = "cm", res = 600, pointsize = 4)
+    col_peaks <- col_sample[chromPeaks(a)[, "sample"]]
+    plot(a, col = paste0(col_sample, 40), peakBg = paste0(col_peaks, 20),
+         peakCol = paste0(col_peaks, 80))
+    maxy <- max(chromPeaks(a)[, "maxo"])
+    abline(v = mtch_mzrt[i]$rtmed, col = "grey", lty = 2)
+    xpos <- mtch_mzrt[i]$target_rtmed
+    points(xpos, rep(maxy * 0.75, length(xpos)), lty = 2, type = "h")
+    text(xpos, rep(maxy * 0.75, length(xpos)),
+         labels = mtch_mzrt[i]$target_cpdID, pos = 3)
+    grid()
+    dev.off()
+}
+```
+
+While we could try to select a single, most likely,
+compound for such multi-matching (e.g. by using the information reported in the
+`"ppm_error"` or `"score_rt"` columns above, which provide the absolute m/z
+difference between query and target, in ppm, and the difference between the
+query and target retention time), we below simply collapse and merge this
+information.
+
+```{r}
+#' Split the data by feature_id
+tmp <- split(tmp, tmp$feature_id)
+#' Paste/merge the content of the annotation columns per feature
+tmp <- lapply(tmp, function(z) {
+    data.frame(feature_id = z$feature_id[1L],
+               cpdID = paste0(z$target_cpdID, collapse = "; "),
+               cpdName = paste0(z$target_cpdName, collapse = "; "))
+}) |>
+    do.call(what = rbind)
+```
+
+**Note**: this is just a quick, easy, automated processing of the data. More in
+depth analysis could be done by manually checking all features.
+
+Since we have now a single annotation for each feature we can subset the result
+object to these features and add this annotation to this object.
+
+```{r}
+#' Subset the result object to annotated features
+res_sts_ms1 <- res_sts[tmp$feature_id, ]
+#' Add the annotations.
+rowData(res_sts_ms1) <- cbind(
+    rowData(res_sts_ms1), tmp[, colnames(tmp) != "feature_id"])
+```
+
+
+TODO: need to proceed here.
+
 ```{r extraction-match}
 # To extract only the object of the matched features
 mtch <- mtch[whichQuery(mtch)]
-matchedData(mtch)|> head()
+matchedData(mtch) |> head()
 nrow(matchedData(mtch))
 ```
 
