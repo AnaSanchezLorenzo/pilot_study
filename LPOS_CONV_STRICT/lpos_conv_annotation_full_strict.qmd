@@ -1,5 +1,5 @@
 ---
-title: "Data analysis of Pilot Study from Imperial - Full data."
+title: "Data analysis of Pilot Study from Imperial - annotation_LPOS_CONV."
 format: html
 tbl-cap-location: bottom
 editor: visual
@@ -59,12 +59,14 @@ library(MetaboAnnotation) # Functionality for metabolite annotation.
 
 ## Data import
 
+In this case, we only import the SumExp with significant features details
+(res_sts).
+
 ```{r import, message=FALSE}
 # Data import
 load("preprocessed_lcms1.RData")
-load("res_sign_fts.RData")
+load("res_sts.RData")
 featureDefinitions(lcms1) |>head()
-res <- res_sign_fts
 ```
 
 ```{r indexing, message=FALSE}
@@ -76,8 +78,7 @@ idx_samples <- sampleData(lcms1)$device %in% c("WHATMAN", "MITRA", "CAPITAINER",
 idx_bl_sp <- sampleData(lcms1)$blank_type %in% c("BLANK_W", "BLANK_C", "BLANK_M")
 ```
 
-```{r par-process}
-#' Set up parallel processing using 3 cores
+```{r par-process}#' Set up parallel processing using 3 cores}
 if (.Platform$OS.type == "unix") {
   register(MulticoreParam(4)) ### chunksize has to be be the same number. 
  } else {
@@ -104,20 +105,17 @@ col_blank_BuS <- leg_blank_BuS[sampleData(lcms1[!idx_bl_sp])$device]
 leg_blank_BuS <- leg_blank_BuS[c("WHATMAN", "MITRA", "CAPITAINER")]
 ```
 
-##Participants column addition For Differential abundance analysis we need to
-specify participants. For that we need to add a new column from sample_name
-column information in lcms1 object and res object.
+## Participants column addition For Differential abundance analysis
+
+We need to specify participants. For that we need to add a new column from
+sample_name column information in lcms1 object and res object.
 
 ```{r}
 #' Create a new column with participants names without device specification.
 sampleData(lcms1)$participants <- substr(sampleData(lcms1)$sample_name, 1, nchar(sampleData(lcms1)$sample_name) -1)
 sampleData(lcms1)$participants[idx_blank_qc] <- NA_character_
-colData(res)$participants <- substr(colData(res)$sample_name, 1, nchar(colData(res)$sample_name) - 1)
-#colData(res)$participants[idx_blank_qc] <- NA_character_  # fix error
+colData(res_sts)$participants <- substr(colData(res_sts)$sample_name, 1, nchar(colData(res_sts)$sample_name) - 1)
 ```
-
-NOTE: Error in `[[<-`(`*tmp*`, name, value = c(NA, NA, NA, NA, NA, NA, "C06", :
-66 elements in value to replace 50 elements
 
 # ANNOTATION
 
@@ -128,7 +126,7 @@ features with significant differences in abundances between plasma and the rest
 of groups. As the data was acquired using the NPC LPOS method, we could target
 the compounds from the NPC library. However, as LC set-up was different
 (different sample manager and different tubing length), only m/z values will be
-able to match, not rt values.
+able to match, fnot rt values.
 
 To do the matching of m/z values, MetaboAnnotation package is used. This is the
 lowest level of confidence in metabolite annotation. However, it gives ideas
@@ -143,84 +141,128 @@ target_df <- as.data.frame(target_df)  # Ensure it is a data frame
 head(target_df)  
 ```
 
-Then, I prepared the data.frame with experimental features detected:
+As we know there is a shift in the rt due to the LC set up and tube length I
+would change the rt column of the library for this specific dataset. If I check
+the rt of "known compounds" EIC there is a shift +30 seconds in comparison with
+the rt from the library. However, I will increase the rt range in case there are
+some differences between features.
+
+```{r}
+# Modify column rt ranges from library
+colnames(target_df)
+# fit rt ranges
+target_df$rtMin <- target_df$rtMin + 25
+target_df$rtMax <- target_df$rtMax + 35
+target_df$rt <- target_df$rt + 30
+target_df$rt_minutes <- target_df$rt_minutes + 0.5
+#target and query need to have same rt column name
+target_df$rtmed <- target_df$rt 
+# check it is working
+head(target_df)
+```
+
+With this modification, I am trying to do MS1 annotation with m/z and rt values.
+
+First, I prepared the data.frame with experimental features detected:
 
 ```{r query-df}
 # Prepare query data frame
-rowData(res)$feature_id <- rownames(rowData(res))
-res_sig_W <- res[rowData(res)$significant.W, ]
-rowData(res_sig_W)
+rowData(res_sts)$feature_id <- rownames(rowData(res_sts))
+#cont with full datset
+rowData(res_sts)
+# Convert to data frame
+res_sts_df <- as.data.frame(rowData(res_sts))
+res_sts_df
 ```
 
 Now, we do the matching in comparison with the target dataframe with reference
 known compounds. As we already have the ion description in the library, we
 include those adducts.
 
-```{r match}
-#' Setup parameters for the matching
-param <- Mass2MzParam(adducts = c("[M+H]+", "[M+Na]+", "[M+NH4]+", "[M+H-H2O]+",  "[M+K]+", "[M]+"),
-                      tolerance = 0, ppm = 10)
-
-#' Perform the matching.
-mtch <- matchValues(res_sig_W, target_df, param = param, 
-                    mzColname = "mzmed", 
-                    massColname = "Monoisotopic_mass")
-mtch
-```
-
 NOTE: Metabonaut: tolerance = 0, ppm = 5; MetaboAnnotation: tolerance = 0.005,
 ppm = 0. No need to be that restrictive as I am using my own library with
 metabolites already identified with standards in my lab with same method.
 
 The resulting Matched object (with 10 ppm) shows that 362 out of 1623
-significant features were matched against at least one target compound. Out of the 378 identify ions in NPC library, we are able to match 226 metabolites. 
-The result object (mtch) contains the full query data.frame and target data.frame as well as the matching information. To visualize the info from mtch:
+significant features were matched against at least one target compound. Out of
+the 378 identify ions in NPC library, we are able to match 226 metabolites. If
+we try to do MS1 annotation matching m/z abd retention time values, we expect
+the match to be more accurate because rt will restrict the match and if features
+are detected across the analysis it will only identify the features that matched
+with biological compounds:
+
+```{r}
+parm <- Mass2MzRtParam(adducts = c("[M+H]+", "[M+Na]+", "[M+NH4]+", "[M+H-H2O]+",  "[M+K]+", "[M]+"),
+                       tolerance = 0, ppm = 10,
+                       toleranceRt = 10)
+mtch <- matchValues(res_sts, target_df, param = parm,
+                                rtColname = "rtmed", mzColname = "mzmed",
+                                massColname = "Monoisotopic_mass")
+mtch
+```
+
+After matching mz and rt, as expected, we have less matches with the target
+object (159 at of 378 annotations; only mz = 226/378). However, it is finding
+same compound at different rts in query object. In total, we will have 245
+annotations but we will have not manually check those ones. I will continue the
+annotation with this matched object.
+
+The result object (mtch) contains the full query data.frame and target
+data.frame as well as the matching information. To visualize the info from mtch:
 
 ```{r visualisation1}
-head(query(mtch))
+# head(query(mtch))
 ```
 
 ```{r visualisation2}
-head(target(mtch))
+# head(target(mtch))
 ```
 
 ```{r visualisation3}
-whichQuery(mtch)
+# whichQuery(mtch)
 ```
 
 ```{r visualisation4}
-whichTarget(mtch)
+# whichTarget(mtch)
 ```
 
 ```{r visualisation5}
-colnames(mtch)
+# colnames(mtch)
 ```
 
 ```{r extraction-match}
+# To extract only the object of the matched features
+mtch <- mtch[whichQuery(mtch)]
 matchedData(mtch)|> head()
+nrow(matchedData(mtch))
 ```
 
 ```{r visualisation5}
-mtch$target_cpdName |> head()
+mtch$target_cpdName
 ```
 
 Below I extract the full result from the Matched object:
 
 ```{r extration-match}
+#' Extracting the results
 mtch_res <- matchedData(mtch, c("feature_id", "mzmed", "rtmed", "adduct", 
                                 "target_ion", "ppm_error", 
                                 "target_chemicalFormula", 
                                 "target_Monoisotopic_mass", 
-                                "target_cpdName", "target_InChI" ))
+                                "target_cpdName", "target_InChI", 
+                                "coef.W", "coef.M", "coef.C", "coef.B", 
+                                "adjp.W", "adjp.M", "adjp.C", "adjp.B" ))
 
 mtch_res
 ```
 
+\[from here it is from metanonaut\]
+
 To reduce redundancy in the result table we below iterate over the hits of a
 feature and keep only matches to unique compounds (identified by their
-INCHIKEY). The INCHI name combine information from compound’s chemical
-formula and structure, so while different compounds can share the same chemical
-formula, they should have a different structure and thus INCHI.
+INCHIKEY). The INCHI name combine information from compound’s chemical formula
+and structure, so while different compounds can share the same chemical formula,
+they should have a different structure and thus INCHI.
 
 ```{r}
 rownames(mtch_res) <- NULL
@@ -235,41 +277,85 @@ mtch_res <- split(mtch_res, mtch_res$feature_id) |>
     unlist(recursive = FALSE) |>
     do.call(what = rbind)
 
+#NOTE WHAT MEANS THIS FUNCTION?
+
 #' Display the results
 kable(mtch_res, format = "pipe")
+
+nrow(mtch_res)
+mtch_res <- cbind(mtch_res, rowData(res_sts)[mtch_res$feature_id, 
+                                             c("coef.W", "adjp.B")])
+mtch_res
+
 ```
 
 ```{r}
+# Add all coef and adjp from res_sts. 
 nrow(mtch_res)
+mtch_res <- cbind(mtch_res, rowData(res_sts)[mtch_res$feature_id, 
+                                             c("coef.W"
+                                               ,"coef.M", "coef.C",
+                                                "coef.B",
+                                               "adjp.W", "adjp.M", "adjp.C",
+                                                "adjp.B"
+                                               )])
+mtch_res
 ```
 
-Object of class Matched 
-Total number of matches: 625 
-Number of query objects: 1622 (362 matched)
-Number of target objects: 378 (226 matched)
-But nrow(mtch_res) = 411??? Why is it different? 
+```{r}
+mtch_res_df <- as.data.frame(mtch_res)
+library(writexl)
+write_xlsx(mtch_res_df, "mtch_res_output.xlsx")
+```
 
+Only 195 match. Let see how to make sure the ion matched is the expected.
+
+```{r}
+# Filter rows where 'adduct' and 'target_ion' are the same
+mtch_res_filtered <- mtch_res[mtch_res$adduct == mtch_res$target_ion, ] 
+nrow(mtch_res_filtered)
+```
+
+Only 77 compounds have the same ion.
+
+```{r}
+mtch_res_filtered_df <- as.data.frame(mtch_res_filtered)
+write_xlsx(mtch_res_filtered_df, "mtch_res_filtered_output.xlsx")
+```
+FIX: add names of all sign features. 
 While being of low confidence, MS1-based annotation can provide first candidate
 annotations that could be confirmed or rejected by additional analyses.
 
 ## MS2 Annotation
 
-LC MS/MS data were recorded in data depending acquisition (DDA) in pooled samples (and QCs samples). However, method was not fully optimised and it seems MS2 data points will not be really abundance in those samples. I would like to test the data to see how do I need to modify the method. 
+LC MS/MS data were recorded in data depending acquisition (DDA) in pooled
+samples (and QCs samples). However, method was not fully optimised and it seems
+MS2 data points will not be really abundance in those samples. I would like to
+test the data to see how do I need to modify the method.
 
-The MS2 data was acquited in 7 different samples: 
-- pool sample from each device (Individual 11C, 11W, 11M)
-- pool general sample (QC)
-- pool sample from each device (QCC, QCW, QCM)
+The MS2 data was acquited in 7 different samples:
 
-In total we have 4 measurements from each samples with different mz ranges: 
-- 001: mz range from 50 to 400 Da
-- 002: mz range from 400 to 800 Da
-- 003: mz range from 800 to 1200 Da
-- 004: mz range from 50 to 1200 Da. 
+-   pool sample from each device (Individual 11C, 11W, 11M)
 
-This was performed because we experienced a mass sensibility issue in the instrument and by decreasing the mz range sensibility can increase. 
+-   pool general sample (QC)
 
-First step is to load LC-MS/MS data and subset it now only for general QC samples. 
+-   pool sample from each device (QCC, QCW, QCM)
+
+In total we have 4 measurements from each samples with different mz ranges:
+
+-   001: mz range from 50 to 400 Da
+
+-   002: mz range from 400 to 800 Da
+
+-   003: mz range from 800 to 1200 Da
+
+-   004: mz range from 50 to 1200 Da.
+
+This was performed because we experienced a mass sensibility issue in the
+instrument and by decreasing the mz range sensibility can increase.
+
+First step is to load LC-MS/MS data and subset it now only for general QC
+samples.
 
 ```{r import-files}
 #' read the sample descriptions from an xlsx sheet
@@ -283,9 +369,9 @@ lcms2 <- readMsExperiment(file.path(MS2_mzml_path, "/",pd_MS2$mzML_file),
                           sampleData = pd_MS2)
 lcms2
 ```
-  
+
 ```{r}
-# Add mzrange data information (from filenames)
+# Add mzrange data information (from file names)
 sampleData(lcms2)$fragmentation_mode <- c("001", "002", "003", "004")
 
 #' Subset only samples with mz range form 50-1200Da. 
@@ -297,11 +383,15 @@ sampleData(lcms2_004)
 colnames(sampleData(lcms2_004)) 
 sampleData(lcms2_004) |> kable (format = "pipe")
 ```
-MS2 Data is filtered to the same RT range as LC-MS run to clean unnecessary peaks that will not be intered
+
+MS2 Data is filtered to the same RT range as LC-MS run to clean unnecessary
+peaks that will not be of interest
+
 ```{r}
 #' Filter the data to the same RT range as the LC-MS run
 lcms2_004 <- filterRt(lcms2_004, c(60, 700))
 ```
+
 Below we show the number of MS1 and MS2 spectra for each of the files.
 
 ```{r}
@@ -312,97 +402,179 @@ spectra(lcms2_004) |>
     lapply(table) |>
     do.call(what = cbind)
 ```
-In the plot below we can observe the different mz ranges in each sample measurement. This was performed using the QC sample. 
+
+NOTE: same number of spectra in MS1 and MS2 (suspicious?) sample 6 is the only
+one with one spectrum differents.
+
+```{r}
+sampleData(lcms2_004)$sample_name
+```
+
+In the plot below we can observe the different mz ranges in each sample
+measurement.
 
 ```{r}
 #|fig: "Figure XX. Precursor ions in the LC-MS/MS data set."
-# par(mar = c(4, 4, 2, 4))
-par (mfrow = c(7, 1), mar = c(2, 2.5, 2, 4))
-plotPrecursorIons(lcms2_004, cex = 0.2)
-grid() 
+
+# par (mfrow = c(7, 1), mar = c(2, 2.5, 2, 4))
+plotPrecursorIons(lcms2_004[1,], cex = 0.5, 
+                  xlab = "retention time (s)",
+                  ylab = "m/z ratio",
+                  main = sampleData(lcms2_004)$sample_name[1])
+plotPrecursorIons(lcms2_004[2,], cex = 0.5, 
+                  xlab = "retention time (s)",
+                  ylab = "m/z ratio",
+                  main = sampleData(lcms2_004)$sample_name[2])
+plotPrecursorIons(lcms2_004[3,], cex = 0.5, 
+                  xlab = "retention time (s)",
+                  ylab = "m/z ratio",
+                  main = sampleData(lcms2_004)$sample_name[3])
+plotPrecursorIons(lcms2_004[4,], cex = 0.5, 
+                  xlab = "retention time (s)",
+                  ylab = "m/z ratio",
+                  main = sampleData(lcms2_004)$sample_name[4])
+plotPrecursorIons(lcms2_004[5,], cex = 0.5, 
+                  xlab = "retention time (s)",
+                  ylab = "m/z ratio",
+                  main = sampleData(lcms2_004)$sample_name[5])
+plotPrecursorIons(lcms2_004[6,], cex = 0.5, 
+                  xlab = "retention time (s)",
+                  ylab = "m/z ratio",
+                  main = sampleData(lcms2_004)$sample_name[6])
+plotPrecursorIons(lcms2_004[7,], cex = 0.5, 
+                  xlab = "retention time (s)",
+                  ylab = "m/z ratio",
+                  main = sampleData(lcms2_004)$sample_name[7])
+ 
 ```
-NOTE: replot with the rest of samples? If I plot all samples it looks really small and data cannot be visualise properly. Title is the same for all samples?
-We observed a high amount of low mass molecules and few high mass molecules. 
 
-We next extract the Spectra object with the MS data from the data object and assign a new spectra variable with the employed collision energy, which we extract from the data object sampleData.
+We observed a high amount of low mass molecules and few high mass molecules. All
+this precursor ions should have MSMS data or they are MS1 ions? How the If they
+are only precursor ions,
 
-For the next steps MS data is filtered by: 
-- restricting MS2 spectra 
-- removing mass peaks from each spectrum with an intensity that is lower than 5% of the highest intensity for that spectrum, assuming that these very low intensity peaks represent background signal.
-- removing also mass peaks with an m/z value greater or equal to the precursor m/z of the ion. This puts, for the later matching against reference spectra, more weight on the fragmentation pattern of ions and avoids hits based only on the precursor m/z peak (and hence a similar mass of the compared compounds). 
-- restricting the data to spectra with at least two fragment peaks and scale their intensities such that their sum is 1 for each spectrum.
+We next extract the Spectra object with the MS data from the data object and
+assign a new spectra variable with the employed collision energy, which we
+extract from the data object sampleData.
 
-While similarity calculations are not affected by this scaling, it makes visual comparison of fragment spectra easier to read.
+For the next steps MS data is filtered by:
+
+-   restricting MS2 spectra
+
+-   removing mass peaks from each spectrum with an intensity that is lower than
+    5% of the highest intensity for that spectrum, assuming that these very low
+    intensity peaks represent background signal.
+
+-   removing also mass peaks with an m/z value greater or equal to the precursor
+    m/z of the ion. This puts, for the later matching against reference spectra,
+    more weight on the fragmentation pattern of ions and avoids hits based only
+    on the precursor m/z peak (and hence a similar mass of the compared
+    compounds).
+
+-   restricting the data to spectra with at least two fragment peaks and scale
+    their intensities such that their sum is 1 for each spectrum.
+
+While similarity calculations are not affected by this scaling, it makes visual
+comparison of fragment spectra easier to read.
 
 ```{r}
 #' extract spectra object
-ms2_ctr <- spectra(lcms2_004)
+ms2_004 <- spectra(lcms2_004)
 
 #' Remove low intensity peaks
 low_int <- function(x, ...) {
     x > max(x, na.rm = TRUE) * 0.05
 }
-ms2_ctr <- filterMsLevel(ms2_ctr, 2L) |>
+ms2_004 <- filterMsLevel(ms2_004, 2L) |>
     filterIntensity(intensity = low_int) 
 
-# NOTE: 2L is MS2data only?
 #' Remove precursor peaks and restrict to spectra with a minimum number of peaks
-ms2_ctr <- filterPrecursorPeaks(ms2_ctr, ppm = 50, mz = ">=")
-ms2_ctr <- ms2_ctr[lengths(ms2_ctr) > 1] |>
+ms2_004 <- filterPrecursorPeaks(ms2_004, ppm = 50, mz = ">=")
+ms2_004 <- ms2_004[lengths(ms2_004) > 1] |>
     scalePeaks()
 ```
-NOTE: back end is only for data from Metabolight?
 
-The goal of the workflow is to *identify the MS2 spectra* from the second (LC-MS/MS) run that could represent fragments of the ions of features from the data in the first (LC-MS) run. 
+```{r}
+#' Load the MS data subset into memory
+ms2_004 <- setBackend(ms2_004, MsBackendMemory())
+ms2_004 <- applyProcessing(ms2_004)
 
-Our approach is to match MS2 spectra against the *significant features* determined earlier based on their precursor m/z and retention time (given an acceptable tolerance) to the feature’s m/z and retention time. This can be easily done using the featureArea() function that effectively considers the *actual m/z and retention time ranges of the features’ chromatographic peaks* and therefore increase the chance of finding a correct match. 
-This, however, also assumes that retention times between the first and second run don’t differ by much. Alternatively, we would need to align the retention times of the second LC-MS/MS data set to those of the first.
+#' Size of the object after loading into memory
+print(object.size(ms2_004), units = "MB")
+```
+NOTE: how is the preprocessing affecting the next code? Why if I do not perform
+it it gives error related with dimention. 
+
+The goal of the workflow is to *identify the MS2 spectra* from the second
+(LC-MS/MS) run that could represent fragments of the ions of features from the
+data in the first (LC-MS) run.
+
+Our approach is to match MS2 spectra against the *significant features*
+determined earlier based on their precursor m/z and retention time (given an
+acceptable tolerance) to the feature’s m/z and retention time. This can be
+easily done using the featureArea() function that effectively considers the
+*actual m/z and retention time ranges of the features’ chromatographic peaks*
+and therefore increase the chance of finding a correct match. This, however,
+also assumes that retention times between the first and second run don’t differ
+by much. Alternatively, we would need to align the retention times of the second
+LC-MS/MS data set to those of the first.
 
 ```{r}
 #' Define the m/z and retention time ranges for the significant features
-target <- featureArea(lcms1)[rownames(res_sig_W), ]
-target
-
+target <- featureArea(lcms1)[rownames(res_sts), ] |> as.data.frame()
+target$rtmin <- target$rtmin - 2
+target$rtmax <- target$rtmax + 2
 ```
-We next *identify the fragment spectra* with their precursor m/z and retention times within these ranges. We use the filterRanges() function that allows to filter a Spectra object using multiple ranges simultaneously. We apply this function separately to each feature (row in the above matrix) to extract the MS2 spectra representing fragmentation information of the presumed feature’s ions.
+
+We next *identify the fragment spectra* with their precursor m/z and retention
+times within these ranges. We use the filterRanges() function that allows to
+filter a Spectra object using multiple ranges simultaneously. We apply this
+function separately to each feature (row in the above matrix) to extract the MS2
+spectra representing fragmentation information of the presumed feature’s ions.
 
 ```{r}
 #' Identify for each feature MS2 spectra with their precursor m/z and
 #' retention time within the feature's m/z and retention time range
-ms2_ctr_fts <- apply(target[, c("rtmin", "rtmax", "mzmin", "mzmax")],
-                     MARGIN = 1, FUN = filterRanges, object = ms2_ctr,
+ms2_004_fts <- apply(target[, c("rtmin", "rtmax", "mzmin", "mzmax")],
+                     MARGIN = 1, FUN = filterRanges, object = ms2_004,
                      spectraVariables = c("rtime", "precursorMz"))
-lengths(ms2_ctr_fts)
-# test<- ms2_ctr_fts[lengths(ms2_ctr_fts) > 0]
-# lengths(test)
+# lengths(ms2_004_fts)
+
+ms2_004_fts_test<- ms2_004_fts[lengths(ms2_004_fts) > 0]
+lengths(ms2_004_fts_test)
 ```
-The result from this apply() call is a list of Spectra, each element representing the result for one feature. With the exception of the last feature, multiple MS2 spectra could be identified. We next combine the list of Spectra into a single Spectra object using the concatenateSpectra() function and add an additional spectra variable containing the respective feature identifier.
+
+The result from this apply() call is a *list of Spectra*, each element
+representing the result for one feature. With the exception of the last feature,
+multiple MS2 spectra could be identified. We next combine the list of Spectra
+into a single Spectra object using the *concatenateSpectra() function* and add
+an additional spectra variable containing the respective feature identifier.
 
 ```{r}
-l <- lengths(ms2_ctr_fts)
+l <- lengths(ms2_004_fts)
 #' Combine the individual Spectra objects
-ms2_ctr_fts <- concatenateSpectra(ms2_ctr_fts) 
-#' fix error: Error in .concatenate_spectra(unlist(unname(list(unname(x), ...)))) :  Can not  concatenate 'Spectra' objects with non-empty processing queue. Consider calling 'applyProcessing' before.
-
+ms2_004_fts <- concatenateSpectra(ms2_004_fts) 
+lengths(ms2_004_fts)
 #' Assign the feature identifier to each MS2 spectrum
-ms2_ctr_fts$feature_id <- rep(rownames(res_sig), l)
-
+ms2_004_fts$feature_id <- rep(rownames(res_sts), l)
+# fix
 ## Save for reuse in other vignettes
-save(ms2_ctr_fts, file = "objects/spectra_significant_fts.RData")
-
+# save(ms2_004_fts, file = "objects/spectra_significant_fts.RData") ## Error in gzfile(file, "wb") : cannot open the connection
 ```
+### MassBank
 
-We next build our reference data which we need to process the same way as our query spectra. We extract all fragment spectra from the MassBank database, restrict to positive polarity data (since our experiment was acquired in positive polarity) and perform the same processing to the fragment spectra from the MassBank database.
-
-NOTE: does MassBank containe LPOS annotations? wichi dataset do I need to load?
+We next build our reference data which we need to process the same way as our
+query spectra. We extract all fragment spectra from the MassBank database,
+restrict to positive polarity data (since our experiment was acquired in
+positive polarity) and perform the same processing to the fragment spectra from
+the MassBank database.
 
 ```{r}
 #' load reference data
 ah <- AnnotationHub()
-
 #' List available MassBank data sets
 query(ah, "MassBank")
 ```
+
 ```{r}
 #' Load one MassBank release: choose last release. 
 mb <- ah[["AH119519"]]
@@ -414,9 +586,321 @@ ms2_ref <- Spectra(mb) |>
 ms2_ref <- ms2_ref[lengths(ms2_ref) > 1] |>
     scalePeaks()
 ```
-I cannot continue with the concatenate function error. 
 
-...
+We use the matchSpectra() function from the MetaboAnnotation package with the
+CompareSpectraParam to define the settings for the matching.
+
+```{r}
+register(SerialParam())
+
+#' Define the settings for the spectra matching.
+prm <- CompareSpectraParam(ppm = 40, tolerance = 0.05,
+                           requirePrecursor = TRUE,
+                           THRESHFUN = function(x) which(x >= 0.6))
+#Note: same parameters?
+
+ms2_mtch <- matchSpectra(ms2_004_fts, ms2_ref, param = prm)
+ms2_mtch
+
+```
+
+From 691 query MS2 spectra, only 13 could be matched to one reference fragment
+spectrum.
+
+Below we restrict the results to these matching spectra and extract all metadata
+of the query and target spectra as well as the similarity score
+
+```{r}
+#' Keep only query spectra with matching reference spectra
+ms2_mtch <- ms2_mtch[whichQuery(ms2_mtch)]
+
+#' Extract the results
+ms2_mtch_res <- matchedData(ms2_mtch)
+nrow(ms2_mtch_res)
+ms2_mtch_res$target_name
+```
+The annotations seems to be the same in most of the cases. So it seems to be
+only 4 metabolites (lipids). NOTE: do I need to modify the parameters?
+
+Now, we have query-target pairs with a spectra similarity higher than 0.7. Below
+we thus iterate over the feature-compound pairs and select for each the one with
+the highest score. As an identifier for a compound, we use its fragment
+spectra’s INCHI-key, since compound names in MassBank do not have accepted
+consensus/controlled vocabularies.
+
+```{r}
+#' - split the result per feature
+#' - select for each feature the best matching result for each compound
+#' - combine the result again into a data frame
+ms2_mtch_res <-
+    ms2_mtch_res |>
+    split(f = paste(ms2_mtch_res$feature_id, ms2_mtch_res$target_inchikey)) |>
+    lapply(function(z) {
+        z[which.max(z$score), ]
+    }) |>
+    do.call(what = rbind) |>
+    as.data.frame()
+
+#' List the best matching feature-compound pair
+pandoc.table(ms2_mtch_res[, c("feature_id", "target_name", "score",
+                              "target_inchikey")],
+             style = "rmarkdown",
+             caption = "Table 9.MS2 annotation results.",
+             split.table = Inf) 
+#' Export as df to manually analyse them
+ms2_MassBank_result <- ms2_mtch_res[, c("feature_id", "target_name", "score", "target_inchikey")]
+write_xlsx(ms2_MassBank_result, "ms2_MassBank_results.xlsx")
+```
+
+From all 35 significant features, only 10 could be annotated to a compound based 
+on the MS2-based approach. However, annotations show 5 out 10 annotations is the 
+same compound. Thus, combining the information from the MS1- and MS2 based 
+annotation we can only annotate 5 feature with a considerable confidence. 
+(how is the score calculated? Threshold)
+
+MS 2 data is not good at the moment? GNPS could be better?
+NOTE: what is the score based on?
+
+We below plot the EIC for this feature highlighting the retention time at which 
+the highest scoring MS2 spectra was recorded and create a mirror plot comparing 
+this MS2 spectra to the reference fragment spectra.
+
+```{r}
+#' Define colors for samples only 
+leg_devices <- leg_full[-c(1,2)]
+col_devices <- leg_devices[sampleData(lcms1[!idx_blank_qc])$device]
+
+#' Extract and plot EIC for the annotated feature
+eic <- featureChromatograms(lcms1, features = ms2_mtch_res$feature_id[1])
+plot(eic, col = col_sample, peakCol = col_sample[chromPeaks(eic)[, "sample"]],
+     peakBg = paste0(col_sample[chromPeaks(eic)[, "sample"]], 20))
+legend("topright", col = leg_devices, legend = names(leg_devices), lty = 1)
+
+#' Identify the best matching query-target spectra pair
+idx <- which.max(ms2_mtch_res$score)
+
+#' Indicate the retention time of the MS2 spectrum in the EIC plot
+abline(v = ms2_mtch_res$rtime[idx])
+```
+ADD: only plot features that are significant in each comparison. 
+- add columns with coef and adjp in the matrix
+- only plot features in that row give me the devices that have an adjp >0.05. 
+- plot only devices that are sinficantly different. 
+- export it: for loop, png with info to save it, plot, dev off (finish initial 
+graphical device). 
+
+FIX: export the EIC of each peack annotated with MassBank. 
+
+Mirror spectra:
+```{r}
+#' Get the index of the MS2 spectrum in the query object
+query_idx <- which(query(ms2_mtch)$.original_query_index ==
+                                  ms2_mtch_res$.original_query_index[idx])
+query_ms2 <- query(ms2_mtch)[query_idx]
+#' Get the index of the MS2 spectrum in the target object
+target_idx <- which(target(ms2_mtch)$spectrum_id ==
+                                    ms2_mtch_res$target_spectrum_id[idx])
+target_ms2 <- target(ms2_mtch)[target_idx]
+
+#' Create a mirror plot comparing the two best matching spectra
+plotSpectraMirror(query_ms2, target_ms2)
+legend("topleft",
+       legend = paste0("precursor m/z: ", format(precursorMz(query_ms2), 3)))
+```
+FIX: Johannes?
+Scores?
+
+### GNPS
+
+I first import the GNPS library for MS2 spectra matching.
+
+```{r}
+#' Load GNPS library. 
+library(RSQLite)
+library(MsBackendSql)
+dbfile <- "MsBackendSql.GNPS.matchms.cleaned.v1.sqlite"
+con <- dbConnect(SQLite(), dbfile)
+mb <- Spectra(con, source = MsBackendSql())
+```
+
+```{r}
+#' Filter data for positive ionisation, low intensity fragments, and fragments with higher mz than precursepeak
+ms2_GNPS_ref <- mb |>
+    filterPolarity(1L) |>
+    filterIntensity(intensity = low_int) |>
+    filterPrecursorPeaks(ppm = 50, mz = ">=")
+ms2_GNPS_ref <- ms2_GNPS_ref[lengths(ms2_GNPS_ref) > 1] |>
+    scalePeaks()
+```
+
+We use the matchSpectra() function from the MetaboAnnotation package with the
+CompareSpectraParam to define the settings for the matching.
+
+```{r}
+register(SerialParam())
+
+#' Define the settings for the spectra matching.
+prm <- CompareSpectraParam(ppm = 40, tolerance = 0.05,
+                           requirePrecursor = TRUE,
+                           THRESHFUN = function(x) which(x >= 0.6))
+#Note: same parameters?
+
+ms2_GNPS_mtch <- matchSpectra(ms2_004_fts, ms2_GNPS_ref, param = prm)
+ms2_GNPS_mtch
+
+```
+FIX: if bug appear ask again. 
+From 691 query MS2 spectra, only 13 could be matched to one reference fragment
+spectrum.
+
+Object of class MatchedSpectra 
+Total number of matches: 5219 
+Number of query objects: 773 (294 matched)
+Number of target objects: 270686 (1060 matched)
+
+Below we restrict the results to these matching spectra and extract all metadata
+of the query and target spectra as well as the similarity score
+
+```{r}
+#' Keep only query spectra with matching reference spectra
+ms2_GNPS_mtch <- ms2_GNPS_mtch[whichQuery(ms2_GNPS_mtch)]
+
+#' Extract the results
+ms2_GNPS_mtch_res <- matchedData(ms2_GNPS_mtch)
+nrow(ms2_GNPS_mtch_res)
+ms2_GNPS_mtch_res$target_name
+```
+COMMENT: 
+
+Now, we have query-target pairs with a spectra similarity higher than 0.7. Below
+we thus iterate over the feature-compound pairs and select for each the one with
+the highest score. As an identifier for a compound, we use its fragment
+spectra’s INCHI-key, since compound names in MassBank do not have accepted
+consensus/controlled vocabularies.
+
+```{r}
+#' - split the result per feature
+#' - select for each feature the best matching result for each compound
+#' - combine the result again into a data frame
+ms2_GNPS_mtch_res <-
+    ms2_GNPS_mtch_res |>
+    split(f = paste(ms2_GNPS_mtch_res$feature_id, ms2_GNPS_mtch_res$target_inchikey)) |>
+    lapply(function(z) {
+        z[which.max(z$score), ]
+    }) |>
+    do.call(what = rbind) |>
+    as.data.frame()
+
+#' List the best matching feature-compound pair
+pandoc.table(ms2_GNPS_mtch_res[, c("feature_id", "target_name", "score",
+                              "target_inchikey")],
+             style = "rmarkdown",
+             caption = "Table 9.MS2 annotation results.",
+             split.table = Inf) 
+#' Export as df to manually analyse them
+ms2_MassBank_result <- ms2_GNPS_mtch_res[, c("feature_id", "target_name", "score", "target_inchikey")]
+write_xlsx(ms2_MassBank_result, "ms2_MassBank_results.xlsx")
+```
+NOTE: read in metaboannotation how score is calculated. 
+
+From all 35 significant features, only 10 could be annotated to a compound based 
+on the MS2-based approach. However, annotations show 5 out 10 annotations is the 
+same compound. Thus, combining the information from the MS1- and MS2 based 
+annotation we can only annotate 5 feature with a considerable confidence. 
+(how is the score calculated? Threshold)
+
+GNPS could be better?
+NOTE: what is the score based on?
+
+We below plot the EIC for this feature highlighting the retention time at which 
+the highest scoring MS2 spectra was recorded and create a mirror plot comparing 
+this MS2 spectra to the reference fragment spectra.
+
+```{r}
+#' Define colors for samples only 
+leg_devices <- leg_full[-c(1,2)]
+col_devices <- leg_devices[sampleData(lcms1[!idx_blank_qc])$device]
+
+#' Extract and plot EIC for the annotated feature
+eic <- featureChromatograms(lcms1, features = ms2_GNPS_mtch_res$feature_id[1:6])
+plot(eic, col = col_sample, peakCol = col_sample[chromPeaks(eic)[, "sample"]],
+     peakBg = paste0(col_sample[chromPeaks(eic)[, "sample"]], 20))
+legend("topright", col = leg_devices, legend = names(leg_devices), lty = 1)
+
+#' Identify the best matching query-target spectra pair
+idx <- which.max(ms2_GNPS_mtch_res$score)
+
+#' Indicate the retention time of the MS2 spectrum in the EIC plot
+abline(v = ms2_GNPS_mtch_res$rtime[idx])
+```
+
+FIX: export the EIC of each peack annotated with MassBank. 
+
+# REMOVEME
+
+This is just some test code to see how we can create mirror plots for all
+results.
+
+```{r}
+library(MetaboAnnotation)
+library(Spectra)
+load("matchedSpectra_result.RData")
+ms2_mtch
+```
+
+We can next iterate over the features. For each feature we plot the matching MS2
+spectra.
+
+```{r}
+fts <- unique(ms2_mtch$feature_id)
+
+ppm <- 20
+tolerance <- 0.01
+
+dr <- file.path("images", "matched_features")
+dir.create(dr, showWarnings = FALSE, recursive = TRUE)
+
+for (ft in fts) {
+    ## Subset the data to all query MS2 spectra for that feature
+    a <- ms2_mtch[query(ms2_mtch)$feature_id == ft]
+    ## Identify all MS2 spectra that could be matched against reference
+    for (i in whichQuery(a)) {
+        ai <- a[i]
+        ## For each query MS2 spectrum, identify all matching target spectra
+        for (j in whichTarget(ai)) {
+            ## Get the query and the target spectrum.
+            q <- query(ai)
+            t <- target(ai)[j]
+            png(paste0(dr, "/", ft, "-q", i, "-t", j, ".png"),
+                width = 10, height = 8, units = "cm", res = 600, pointsize = 6)
+            plotSpectraMirror(q, t, ppm = ppm,
+                              tolerance = tolerance, main = ft)
+            grid()
+            legend("topleft", legend = paste0("RT: ", format(rtime(q), digits = 4)))
+            legend("bottomleft", legend = t$name)
+            dev.off()
+        }
+    }
+}
+```
+
+To get the full result table.
+
+```{r, results = "asis"}
+res <- matchedData(
+    ms2_mtch, columns = c("feature_id", "rtime", "target_name",
+                          "target_spectrum_name", "target_inchikey", "score"))
 
 
+library(pander)
+pandoc.table(as.data.frame(res), split.table = Inf, style = "rmarkdown")
 
+```
+
+And only the ones with matches:
+
+```{r, results = "asis"}
+res_found <- res[!is.na(res$score), ]
+pandoc.table(as.data.frame(res_found), split.table = Inf, style = "rmarkdown",
+             caption = "Features with matched MS2 spectra")
+```
