@@ -860,7 +860,8 @@ sum(is.na(featureValues(lcms1))) /
     length(featureValues(lcms1)) * 100
 ```
 
-The gap-filling rescue up signal of most of missing values, remaining only 1.4% Missing Value. 
+The gap-filling rescue up signal of most of missing values, remaining only 1.4%
+Missing Value.
 
 ```{r subset-lcms1-blank}
 lcms1_noblanks <- lcms1[sampleData(lcms1)$device!="BLANK", keepFeatures = TRUE]
@@ -1049,7 +1050,6 @@ Some of the potential contaminant signal can be observed clustered as horizontal
 lines along the full retention time range. These could represent contamination
 with e.g. salts. Also, vertically aligned groups of features are present. These
 could represent multiple ions/adducts of the same compound.
-
 
 # Preprocessing results
 
