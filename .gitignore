@@ -9,3 +9,5 @@
 LPOS_CONV/heatmap
 LPOS_CONV/lpos_conv_preprocessing_qc.qmd
 *.rmarkdown
+*.R
+*.sqlite
