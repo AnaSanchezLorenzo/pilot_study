@@ -13,3 +13,4 @@ LPOS_CONV/lpos_conv_preprocessing_qc.qmd
 *.mgf
 LPOS_CONV_STRICT/gnpslib.R
 /LPOS_CONV_STRICT/old_files
+LPOS_CONV_STRICT/data/NPC_library/LPOS_ROI_V_5_1_2.csv

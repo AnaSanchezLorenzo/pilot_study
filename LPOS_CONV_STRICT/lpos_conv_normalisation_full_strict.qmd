@@ -170,7 +170,7 @@ leg_full["QC"] <- "#f00e0e"
 col_sample <- leg_full[res$device]
 ```
 
-For better representation, data is log2 transformed, centered and scaled in 
+For better representation, data is log2 transformed, centered and scaled in
 order to stabilize the variance and remove dependence on absolute abundances,
 respectively.
 
@@ -523,7 +523,7 @@ legend("topright", col = colors,
 ```
 
 By only plotting the QCs we can visualise the effect of normalisation based on
-QC samples are centered around 0. 
+QC samples are centered around 0.
 
 ### CV after normalisation
 
@@ -559,7 +559,6 @@ The coefficient of variation is clearly reduced by the normalization for the QC
 samples suggesting that indeed technical variance was removed. For study
 samples, CV is comparable suggesting that normalization indeed just reduced the
 technical, but not the biological variance in the data set.
-
 
 #### Density Plots with the distribution of CV in the whole dataset.
 
@@ -799,6 +798,7 @@ therefor will have been detected).
 Same data is ploted with raw assay to avoid filling process.
 
 ```{r test-function-int}
+#' create a funciton to transform everything to integer. 
 #x <- res[, 1]
 small_fct <-function (x){
     as.integer(!is.na(x))
@@ -860,6 +860,7 @@ will need to be done, it would be better to do gap filling beforehand.
 
 ```{r upset-plot}
 # Indexing per device to sum per rows
+# note: why w ind is different? 
 idx_W <- res$device == "WHATMAN"
 idx_C <- colData(res)$device == "CAPITAINER"
 idx_M <- colData(res)$device == "MITRA"
@@ -903,7 +904,6 @@ text(x = bar_positions,
      y = colSums(binary_all) + 100,  # +100 to center text
      labels = colSums(binary_all),
      cex = 0.9, font = 2)
-
 
 ```
 
@@ -1149,7 +1149,6 @@ for (i in 2:length(int)) {
 axis(side = 1, at = seq_len(nrow(num_ft)), labels = rownames(num_ft))
 grid()
 ```
-
 
 # DIFFERENCIAL ABUNDANCE ANALYSIS (lm)
 
@@ -1434,11 +1433,10 @@ abundances in Mitra, while in the other two microsampling devices the abundances
 are higher. A similar observation can be made in the comparison between Whatman
 and Capitainer.
 
-
 ### Table of significant features
 
 ```{r significant-features-plasma}
-# Table of significant features in all groups
+# Table of significant features in WHATMAN
 tab <- rowData(res)[rowData(res)$significant.W,
                     c("mzmed", "rtmed", 
                       "coef.W","pvalue.W","adjp.W", "avg.W",
@@ -1521,7 +1519,6 @@ save(res_sts, file = "res_sts.RData")
 #### Comparison with linear model with participants
 
 ##### Linear Model with participants
-
 
 The same way we compared in a linear model all the devices and references
 samples taking into account the sex variable, now we include participants as a
@@ -1879,7 +1876,7 @@ abundance between the compared groups, their adjusted p-value, their average
 (log2) abundance in each sample group and their RSD in QC samples in the table
 bellow.
 
-### Table of signigicant features
+### Table of significant features
 
 ```{r}
 # Table of significant features in all groups
@@ -2466,5 +2463,4 @@ kable(tab, format = "pipe")
 
 We can confirm that devices are no able to bring significant differences between
 men and women. Only one feature in plasma was significantly different between
-women and men with a adjusted pvalue > 0.05.
-
+women and men with a adjusted pvalue \> 0.05.
