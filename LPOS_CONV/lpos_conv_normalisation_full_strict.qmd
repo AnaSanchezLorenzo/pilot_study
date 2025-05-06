@@ -264,9 +264,9 @@ sample show a decrease of number of features detected along the retention time
 due to instrumental sensibility decreased.The standard deviation is higher and
 the number of features decreased in the end of the analysis. This change is
 shown in all samples and is particularly obvious in QC samples (red). As samples
-were randomized, the injection order correction will only affect the 
-instrumental variability and not biological variability. The comparison between 
-raw data and raw filled data showed that gap filling step rescue those features 
+were randomized, the injection order correction will only affect the
+instrumental variability and not biological variability. The comparison between
+raw data and raw filled data showed that gap filling step rescue those features
 that have not being detected in samples along the analysis.
 
 ### CV values
@@ -283,7 +283,7 @@ res_df <- quantile(cv_qc, na.rm = TRUE)
 kable(res_df, format = "pipe")
 ```
 
-A preliminary calculation of CV values show that 75% of features have CV<30%
+A preliminary calculation of CV values show that 75% of features have CV\<30%
 (23%), which indicates that less than 25% of features will be filtered after the
 normalization.
 
@@ -322,10 +322,10 @@ legend("topright", col = leg_full,
 
 On the RLA plot above, we can see that median is not centered around 0 and
 decrease after QC07 (red samples). This can be associated to the sensibility of
-the instrument and detector value optimisation across the analysis 
-(is it worthy to include "autogain" in method? Technical issues?). Also, mainly 
-with Plasma samples there is more variability, which is also shown in the PCA. 
-This requires samples need to be centered.
+the instrument and detector value optimisation across the analysis (is it worthy
+to include "autogain" in method? Technical issues?). Also, mainly with Plasma
+samples there is more variability, which is also shown in the PCA. This requires
+samples need to be centered.
 
 ## Between sample normalisation
 
@@ -446,8 +446,8 @@ quantitative analysis to determine if there are significant differences.
 ### Intensity Evaluation (RLA)
 
 Relative log abundance plots (RLA) are useful to compare differences in
-abundance between samples. RLA plot is performed only focusing on QC samples for 
-better visualisation of injection order based in unique sample. 
+abundance between samples. RLA plot is performed only focusing on QC samples for
+better visualisation of injection order based in unique sample.
 
 After normalization, relative log abundance plot shows that all QCs abundance
 have been centered around the median. This make the medians of each sample close
@@ -626,15 +626,15 @@ nrow(res)/nrow(res_orig) * 100
 The original data set consisted of `r nrow(res_orig)` features. Removal of
 possible contaminants reduced the data set to `r nrow(res)` features.
 
-From a total of 2902 features, by filtering blankFlag features, 198 features 
-are removed remaining 2564, the 88.3% of total features. 
+From a total of 2902 features, by filtering blankFlag features, 198 features are
+removed remaining 2564, the 88.3% of total features.
 
 ## Filter RSD filter:
 
-RSD is defined as the st. dev of QC samples divided by st deviation for 
-biological samples, for each feature.The purpose of this filtering is to remove 
-features with high technical variability, which is with a CV>30% present in QC
-samples. 
+RSD is defined as the st. dev of QC samples divided by st deviation for
+biological samples, for each feature.The purpose of this filtering is to remove
+features with high technical variability, which is with a CV\>30% present in QC
+samples.
 
 ```{r unfiltered-object}
 # Keep unfiltered object
@@ -649,8 +649,10 @@ filter_Rsd <- RsdFilter(threshold = 0.3,
 res <- filterFeatures(res, filter = filter_Rsd, assay = "norm_imputed")
 
 ```
-After RSD (CV) filtering, 198 features are removed and the data set contains 
-`r nrow(res)` features.This correstpond to 81.5% of features originally detected.
+
+After RSD (CV) filtering, 198 features are removed and the data set contains
+`r nrow(res)` features.This correstpond to 81.5% of features originally
+detected.
 
 ```{r features-number}
 #' Number of features after analysis
@@ -658,6 +660,7 @@ nrow(res)
 #' Percentage left: end/beginning
 nrow(res)/nrow(res_orig) * 100
 ```
+
 As we need to assess number of features in blank we need to do all process of
 normalisation and filtering with res_blank object.
 
@@ -811,12 +814,12 @@ Why do we use unfilled data for qualitative analysis?
 
 During the gap filling, the algorithm is rescuing intensities of NA features in
 some samples from the unfilled data. The reason why we can rescue that data is
-because those features are already present in at least one sample.
-However, if we want to do an experiment only with one type of device or
-reference samples, the algorithm won't know those missing features. So, it is
-important to keep raw data to measure the number of features. However, for
-quantitative analysis, as intensity will be taken into account and imputation
-will need to be done, it would be better to do gap filling beforehand.
+because those features are already present in at least one sample. However, if
+we want to do an experiment only with one type of device or reference samples,
+the algorithm won't know those missing features. So, it is important to keep raw
+data to measure the number of features. However, for quantitative analysis, as
+intensity will be taken into account and imputation will need to be done, it
+would be better to do gap filling beforehand.
 
 ```{r upset-plot}
 # Indexing per device to sum per rows
@@ -863,9 +866,9 @@ text(x = bar_positions,
 
 ```
 
-As we were expecting plasma has less number of features than the rest and
-all devices have a similar number of features, being Whatman the device with
-higher number of features:
+As we were expecting plasma has less number of features than the rest and all
+devices have a similar number of features, being Whatman the device with higher
+number of features:
 
 ```{r col_sums}
 colSums(logical_all)
@@ -923,12 +926,13 @@ barplot(c(percent_missing), ylab = "% of missing values",
 vioplot(intensity, ylab = "Log2 intensity", col = leg_full,
         space = 0.10, ylim = c(4, 25))
 ```
-As seen before, the number of missing values is higher in plasma as it is the 
-groups with less features detected and microsampling has similar number of 
+
+As seen before, the number of missing values is higher in plasma as it is the
+groups with less features detected and microsampling has similar number of
 missing values. If we look at the distribution, the number of features affect to
 each group being whatman, capitainer and mitra similar in terms of intensity.
-However, blood and plasma are less reproducible, mroe variable and present more 
-features with extreme intensities. 
+However, blood and plasma are less reproducible, mroe variable and present more
+features with extreme intensities.
 
 ## Distribution across rt
 
@@ -1106,18 +1110,19 @@ for (i in 2:length(int)) {
 axis(side = 1, at = seq_len(nrow(num_ft)), labels = rownames(num_ft))
 grid()
 ```
+
 If number of features are spread across the m/z bins there is high abundance of
 lipids and less small molecules. However, between 300 and 450, and 550 and 690
-m/z there are more differences between microsampling devidces and references 
-sample groups (blood and plasma). 
+m/z there are more differences between microsampling devidces and references
+sample groups (blood and plasma).
 
 # DIFFERENCIAL ABUNDANCE ANALYSIS (lm)
-HERE
-The next step is to identify features that are differential abundant between the
-devices and reference samples. This allows to identify potential metabolites
-that are extracted with significant differences within different devices. In
-this case, a multiple linear regression analysis is used to identify the
-features with significantly difference in abundances between Whatman, Mitra,
+
+HERE The next step is to identify features that are differential abundant
+between the devices and reference samples. This allows to identify potential
+metabolites that are extracted with significant differences within different
+devices. In this case, a multiple linear regression analysis is used to identify
+the features with significantly difference in abundances between Whatman, Mitra,
 capitainer, Blood or plasma. First, it is important to evaluate the similarities
 between study samples using PCA, after excluding QC samples to avoid them to
 bring variance.
@@ -1653,8 +1658,8 @@ plot(-log10(rowData(res)$pvalue.B), -log10(rowData(res)$pvalue.B.p),
 grid()
 abline(0, 1)
 ```
-NOTE:comment
-## Blood vs devices
+
+NOTE:comment \## Blood vs devices
 
 since microsampling devices contains whole blood samples, it is useful to
 include whole blood as a reference group when comparing microsampling devices.
