@@ -66,28 +66,24 @@ if (.Platform$OS.type == "unix") {
 
 # AIM
 
-LC MS/MS data were recorded in data depending acquisition (DDA) in pooled
-plasma used for testing. 
+LC MS/MS data were recorded in data depending acquisition (DDA) in pooled plasma
+used for testing.
 
-For the RaMMP method, MS2 method needed to be optimised. For that, 2 parameters 
-were analysed: 
--   MS Survey Switching Threshold: wsitch to MSMS acquisition when intensity of individual ion rising above a threshold (1st value)
-test values: 50 000, 100 000. 
--   Stop MSMS when accumulated TIC reach threshold (2nd value)  
+For the RaMMP method, MS2 method needed to be optimised. For that, 2 parameters
+were analysed: - MS Survey Switching Threshold: wsitch to MSMS acquisition when
+intensity of individual ion rising above a threshold (1st value) test values: 50
+000, 100 000. - Stop MSMS when accumulated TIC reach threshold (2nd value)\
 test values: 100 (low), 8 000 000 (high).
 
-AIM: 
-- select best combination of parameters to have enough MS1 and MS2 data. 
-
+AIM: - select best combination of parameters to have enough MS1 and MS2 data.
 
 # Visualisation MS2
 
-Visualisation of each sample to determine wich sample will bring better data. 
-Criteria: 
-- precursor ions
-- scans (comparing MS1 with MS2)
+Visualisation of each sample to determine wich sample will bring better data.
+Criteria: - precursor ions - scans (comparing MS1 with MS2)
 
 ## import data
+
 ```{r import-files}
 #' read the sample descriptions from an xlsx sheet
 pd_MS2 <- read_xlsx("metadata_DDA_opt_RaMMP_LPOS.xlsx", sheet = "samples") |>
@@ -110,7 +106,7 @@ names(leg_full) <- unique(sampleData(lcms2)$device)
 col_sample <- leg_full[sampleData(lcms2)$device]
 ```
 
-In this case, we didn t processed yet the lcms1 but we can visualise the 
+In this case, we didn t processed yet the lcms1 but we can visualise the
 chromatograms from MS1 function
 
 ```{r}
@@ -124,7 +120,6 @@ legend("topright", col = leg_full, legend = names(leg_full),
        bty = "n", cex = 0.9)
 
 ```
-
 
 ```{r}
 #' Filter the data to the same RT range as the LC-MS run
@@ -143,7 +138,7 @@ spectra(lcms2) |>
     do.call(what = cbind)
 ```
 
-All samples have similar number of spectra in MS1 and MS2 (around 56 scans). 
+All samples have similar number of spectra in MS1 and MS2 (around 56 scans).
 
 ```{r}
 sampleData(lcms2)$sample_name
@@ -176,9 +171,7 @@ for (i in 1:ms2_samples) {
 }
 ```
 
-
 STOP HERE
-
 
 NOTE: We observed a high amount of low mass molecules and few high mass
 molecules. All this precursor ions should have MSMS data or they are MS1 ions?
