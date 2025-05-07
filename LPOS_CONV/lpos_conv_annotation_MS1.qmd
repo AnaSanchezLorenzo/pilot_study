@@ -65,8 +65,8 @@ In this case, we only import the SumExp with significant features details
 
 ```{r import, message=FALSE}
 # Data import
-load("preprocessed_lcms1.RData")
-load("res_sts.RData")
+load("objects/preprocessed_lcms1.RData")
+load("objects/res_sts.RData")
 featureDefinitions(lcms1) |>head()
 ```
 
@@ -136,7 +136,7 @@ To start with, I imported the library of metabolites called targed_df.
 
 ```{r import-ms1-features}
 # Import NPC-LPOS library from csv file
-target_df <- read.csv("LPOS_ROI_V_5_1_2.csv")
+target_df <- read.csv("../LPOS_ROI_V_5_1_2.csv")
 target_df <- as.data.frame(target_df)  # Ensure it is a data frame
 head(target_df)  
 ```
@@ -261,7 +261,8 @@ had rows:
 length(mtch_mzrt)
 nrow(res_sts)
 ```
-NOTE: before this was 2454 features? identify what make it changes. 
+
+NOTE: before this was 2454 features? identify what make it changes.
 
 We can restrict the results to specific rows in query, i.e. if we want to know
 the matching results for e.g. the row (feature) with index 13:
@@ -351,9 +352,9 @@ grid()
 # }
 ```
 
-NOTE: Even if target_rtmed is correct, there is still some difference to where
-peak elutes. How this is affecting to annotation and what should be a criteria
-to accept the anntoation or not? Should be this discriminant?
+HERE: [--------------------------------------------------------------------------------------------------------------------------------------------------------------------] 0/33 (  0%) in  0sError in validObject(x) : 
+  invalid class “MsBackendMzR” object: File(s) C:\Users\asanche3\OneDrive - Imperial College London\Documentos\GitHub\pilot_study\LPOS_CONV_STRICT\data\lpos_conv\20240906_PILOTSTUDY_RPOS_CBLANK_001.mzML, C:\Users\asanche3\OneDrive - Imperial College London\Documentos\GitHub\pilot_study\LPOS_CONV_STRICT\data\lpos_conv\20240906_PILOTSTUDY_RPOS_CBLANK_002.mzML, C:\Users\asanche3\OneDrive - Imperial College London\Documentos\GitHub\pilot_study\LPOS_CONV_STRICT\data\lpos_conv\20240906_PILOTSTUDY_RPOS_CBLANK_W_001.mzML, C:\Users\asanche3\OneDrive - Imperial College London\Documentos\GitHub\pilot_study\LPOS_CONV_STRICT\data\lpos_conv\20240906_PILOTSTUDY_RPOS_CBLANK_M_001.mzML, C:\Users\asanche3\OneDrive - Imperial College London\Documentos\GitHub\pilot_study\LPOS_CONV_STRICT\data\lpos_conv\20240906_PILOTSTUDY_RPOS_CBLANK_C_001.mzML, C:\Users\asanche3\OneDrive - Imperial College London\Documentos\GitHub\pilot_study\LPOS_CONV_STRICT\data\lpos_conv\20240906_PILOTSTUDY_RPOS_CQC01.mzML,
+Error : object 'binary_ann_names' not found
 
 While we could try to select a single, most likely, compound for such
 multi-matching (e.g. by using the information reported in the `"ppm_error"` or
@@ -443,11 +444,8 @@ blood samples, while it is low abundance in devices. A few samples from mitra
 and capitainer are grouped together blood group. The rest of the features do not
 seem to have a clear intensity difference. Can it be because of the scale?
 
-To do: 
-*scale need to be changed to -4 and 4 or -3 and 3 so  see more difference
-in features. 
-*troubleshoot with the annotations_row parameter. 
-
+To do: *scale need to be changed to -4 and 4 or -3 and 3 so see more difference
+in features.* troubleshoot with the annotations_row parameter.
 
 ### VOLCANO PLOT
 
@@ -530,16 +528,17 @@ if (any(rowData(res_sts_ms1)$significant.S)) {
            col = "#0000ffcc")
 }
 ```
+
 Ana: is log2 difference the same as fold change?
 
-The volcano plots only show annotated features with MS1 data that have being 
-identified highlighting the once that can be significant. In this case, the 
-effect of each device in the lm are similar, but show some difference in the 
-distribution with the comparison of plasma vs blood. In terms of sex, 
-12 features show to have a significant difference in the lm y ~ device + sex. 
+The volcano plots only show annotated features with MS1 data that have being
+identified highlighting the once that can be significant. In this case, the
+effect of each device in the lm are similar, but show some difference in the
+distribution with the comparison of plasma vs blood. In terms of sex, 12
+features show to have a significant difference in the lm y \~ device + sex.
 
-To do: get a table with the plotted features with feature Id, cpdName, 
-adj pvalues, significant.W TRUE/FALSE. 
+To do: get a table with the plotted features with feature Id, cpdName, adj
+pvalues, significant.W TRUE/FALSE.
 
 #### Table of significant features
 
@@ -561,18 +560,18 @@ kable(tab, format = "pipe")
 
 ### QUALITATIVE ANALYSIS: heatmap binary data with MS1 annotations
 
-After annotation, we want to study deeper how annotated lipids distribute and 
-overlap across different sample groups. 
+After annotation, we want to study deeper how annotated lipids distribute and
+overlap across different sample groups.
 
 We would like to study also which lipids annotated have being detected in each
-group. For this purpose, we need to create a binary matrix with features to 
-determine which features have been identified as detected or not detected. 
-To do so, we include a filter were if feature has been detected in more than 
-5 samples, it will get a 1, otherwise 0.  
+group. For this purpose, we need to create a binary matrix with features to
+determine which features have been identified as detected or not detected. To do
+so, we include a filter were if feature has been detected in more than 5
+samples, it will get a 1, otherwise 0.
 
 CONFLICT: i am mixing raw data with gap_filled data. In this case, binary all do
 not have any information to identify each feature, more than the order where it
-has been detected. If I look at the rowData(res) the rownames are feature_ID 
+has been detected. If I look at the rowData(res) the rownames are feature_ID
 from not filled data, which has a total of 2165 features. However, res_sign_ms1
 has a total of 2454 features (different ID :)).
 
@@ -596,6 +595,7 @@ small_fct <-function (x){
 }
 small_fct(x)
 ```
+
 ```{r}
 # Create a data frames per groups for the BAR plot with binary data
 fts_W <- apply(assay(res_sts_ms1[,idx_W], "raw"), 2, small_fct)
@@ -620,13 +620,15 @@ binary_ann
 # Set Feature_ID as rownames of binary matrix
 row.names(binary_ann) <- rowData(res_sts_ms1)$feature_id 
 ```
+
 ```{r}
 nrow(rowData(res_sts_ms1))
 nrow(binary_ann)
 ```
-I created the  upset plot just to have a look. But not that much difference 
-between groups. Almost all lipids have being detected by all devices. 
-Note: (nrow = 69 in both binary_ann and res_sts_ms1)
+
+I created the upset plot just to have a look. But not that much difference
+between groups. Almost all lipids have being detected by all devices. Note:
+(nrow = 69 in both binary_ann and res_sts_ms1)
 
 ```{r up-set-all}
 #' Upset plot from device specific blanks
@@ -669,7 +671,7 @@ pheatmap(binary_ann, show_rownames = TRUE, show_colnames = TRUE, fontsize_number
 
 -   Concatenate annotations in repeated features
 
--   Add rtime (spectrum), rtmed(ms1), dif rt (abs dif rtmed-rtime), cpdID (Ms1) 
-and feature ID (MS1).
+-   Add rtime (spectrum), rtmed(ms1), dif rt (abs dif rtmed-rtime), cpdID (Ms1)
+    and feature ID (MS1).
 
 -   Manual filtering
