@@ -122,7 +122,7 @@ library(MetaboAnnotation) # Functionality for metabolite annotation.
 ```{r import, message=FALSE}
 # Data import
 #' read the sample descriptions from an xlsx sheet
-pd <- read_xlsx("metadata_lcms_rpos_rammp.xlsx", sheet = "samples") |>
+pd <- read_xlsx("data/lpos_rammp/metadata_lcms_rpos_rammp.xlsx", sheet = "samples") |>
   as.data.frame()
 
 #' Import the data
@@ -445,7 +445,7 @@ We also plot all of them and save the images locally to check manually.
 
 ```{r EIC_extract_for_internal_standard1}
 #' get the list
-intern_standard <- read_xlsx("standard_compound_addition_rammp.xlsx") |> 
+intern_standard <- read_xlsx("data/known_compounds/standard_compound_addition_rammp.xlsx") |> 
   as.data.frame()
 intern_standard <- intern_standard[!is.na(intern_standard$POS), ]
 rownames(intern_standard) <- intern_standard$abbreviation
@@ -528,45 +528,20 @@ conventional method, I increased the ppm value for RAMMP LPOS dataset.
 ```{r run-find-chrompeak-on-entire-dataset, eval=!file.exists("peakdetect_lcms1.RData")}
 #' Using the same settings, but with default snthresh
 param <- CentWaveParam(peakwidth = c(2, 10), ppm = 35, integrate = 2, 
-                       snthresh = 2)
+                       snthresh = 5)
 #param <- CentWaveParam(peakwidth = c(2, 10), ppm = 35, integrate = 2, 
 #                       snthresh = 7, noise = 600)
 #test in EIC: decrease snthre to 3. 
 # lcms1_test <- findChromPeaks(lcms1[idx_qc], param = param, chunkSize = 4)
 lcms1 <- findChromPeaks(lcms1, param = param, chunkSize = 4)
-save(lcms1, file = "peakdetect_lcms1.RData")
+save(lcms1, file = "objects/peakdetect_lcms1.RData")
 ```
 
-Above we found the parameters that have beeing optimised. We decided to continue
-with snthresh = 7 and noise = 600 as there were not that much difference in the
-detection of peaks, but the number of features decreased from \~ ????? to
-\~????.
+Above we found the parameters that have beeing optimised (7-5-2). We decided to
+continue with snthresh = 5, where the number of features increases.
 
-```{r}
-# eics_peakdetect_test <- chromatogram(lcms1_test,
-#                        rt = as.matrix(intern_standard[, c("rtmin", "rtmax")]),
-#                        mz = as.matrix(intern_standard[, c("mzmin", "mzmax")]))
-# fData(eics_peakdetect_test) <- fData(eics)
-# 
-# ## plot 
-# dr <- "EIC_IS/full/peakdetecttest/"
-# dir.create(dr, recursive = TRUE, showWarnings = FALSE)
-# for (i in seq_len(nrow(intern_standard))) {
-#     png(paste0(dr, "EIC_", intern_standard$abbreviation[i], ".png"),
-#         width = 12, height = 8, units = "cm", res = 600, pointsize = 4)
-#     ## assign the sample color to each chromatographic peak
-#     col_bg <- leg_qc[chromPeaks(eics_peakdetect_test[i, ])[, "column"]]
-#     plot(eics_peakdetect_test[i, ], main = intern_standard$name[i],
-#          col = paste0(col_qc_inj_order, 80), peakBg = paste0(col_bg, 40))
-#     grid()
-#     legend("topright", col = leg_qc,
-#            legend = names(leg_qc), lty = 1)
-#     abline(v = intern_standard$RT[i], col = "red", lty = 3)
-#     dev.off()
-# }
-```
-
-```{r run-find-chrompeak-on-entire-dataset2, eval=FALSE,eval=!file.exists("peakdetect_lcms1.RData")}
+```{r run-find-chrompeak-on-entire-dataset2}
+#eval=!file.exists("objects/peakdetect_lcms1.RData")
 #' Update EIC internal standard object
 eics_peakdetect <- chromatogram(lcms1[idx_qc],
                        rt = as.matrix(intern_standard[, c("rtmin", "rtmax")]),
@@ -591,8 +566,8 @@ for (i in seq_len(nrow(intern_standard))) {
 }
 ```
 
-```{r run-find-chrompeak-on-entire-dataset-2, eval=file.exists("peakdetect_lcms1.RData")}
-load("peakdetect_lcms1.RData")
+```{r run-find-chrompeak-on-entire-dataset-2, eval=file.exists("objects/peakdetect_lcms1.RData")}
+load("objects/peakdetect_lcms1.RData")
 ```
 
 All peaks of known compounds were detected so no further optimisation was
@@ -606,7 +581,7 @@ MergeNeighboringPeaksParam() to merge some split peaks. expandMz is important to
 keep it small to avoid merging isotopes. ExpanRt: half size of av rt width.
 minProp: to determine
 
-```{r refine1, eval=!file.exists("refine_identified_lcms1.RData")}
+```{r refine1, eval=!file.exists("objects/refine_identified_lcms1.RData")}
 #' Apply on whole dataset
 param <- MergeNeighboringPeaksParam(expandRt = 2, expandMz = 0.0015,
                                     minProp = 0.75)
@@ -615,13 +590,13 @@ param <- MergeNeighboringPeaksParam(expandRt = 2, expandMz = 0.0015,
 lcms1 <- refineChromPeaks(lcms1, param = param, chunkSize = 4)
 chromPeakData(lcms1)$merged |>
                       table()
-save(lcms1, file = "refine_identified_lcms1.RData")
+save(lcms1, file = "objects/refine_identified_lcms1.RData")
 ```
 
 After refinement, the chrompeak detected decreased from 59309 to 54848.
 
-```{r eval=file.exists("refine_identified_lcms1.RData")}
-load("refine_identified_lcms1.RData")
+```{r eval=file.exists("objects/refine_identified_lcms1.RData")}
+load("objects/refine_identified_lcms1.RData")
 ```
 
 We check the number of identified chromatographic peaks in all samples of a data
@@ -645,7 +620,7 @@ study samples. NOTE: FIX. shouldn t be less than 1000?
 We do an initial correspondence round on the QC samples. The alignment will be
 based on the features shared in these samples.
 
-```{r rt_alignment_1, eval=!file.exists("align_lcms1.RData")}
+```{r rt_alignment_1, eval=!file.exists("objects/align_lcms1.RData")}
 #| fig-cap: "Figure 7. Initial correspondence analysis."
 # Initial correspondence analysis
 param <- PeakDensityParam(sampleGroups = sampleData(lcms1)$device == "QC",
@@ -655,7 +630,7 @@ param <- PeakDensityParam(sampleGroups = sampleData(lcms1)$device == "QC",
 lcms1 <- groupChromPeaks(lcms1, param = param)
 ```
 
-```{r rt_alignment_2, eval=!file.exists("align_lcms1.RData")}
+```{r rt_alignment_2, eval=!file.exists("objects/align_lcms1.RData")}
 #' Define parameters of choice
 subset <- which(sampleData(lcms1)$device == "QC")
 param <- PeakGroupsParam(minFraction = 0.9, extraPeaks = 50, span = 0.5,
@@ -668,7 +643,7 @@ lcms1 <- adjustRtime(lcms1, param = param)
 
 ```
 
-```{r rt_alignment_plot, eval = FALSE}
+```{r rt_alignment_plot}
 #| fig-cap: "Figure 8. Retention time alignment results."
 #| fig-height: 5
 #| fig-width: 10
@@ -685,7 +660,7 @@ legend("topright", inset = c(-0.3, 0), col = leg_full, legend = names(leg_full),
 The differences in retention times are -1s to +0.5s. This will require retention
 time alignment.
 
-```{r rt_alignment_4, eval=!file.exists("align_lcms1.RData")}
+```{r rt_alignment_4, eval=!file.exists("objects/align_lcms1.RData")}
 #' Get data before alignment
 lcms1_raw <- dropAdjustedRtime(lcms1)
 
@@ -693,14 +668,14 @@ lcms1_raw <- dropAdjustedRtime(lcms1)
 lcms1 <- applyAdjustedRtime(lcms1)
 
 # Save aligment object 
-save(lcms1, file = "align_lcms1.RData")
+save(lcms1, file = "objects/align_lcms1.RData")
 ```
 
 ```{r eval=file.exists("align_lcms1.RData")}
-load("align_lcms1.RData")
+load("objects/align_lcms1.RData")
 ```
 
-```{r rt_alignment_5, eval=FALSE}
+```{r rt_alignment_5}
 # RUN WITH QCs (idx)
 #' Update EIC internal standard object
 eics_align <- chromatogram(lcms1[idx_qc],
@@ -740,8 +715,8 @@ As described above, for the present data set we don't need to perform a
 retention time alignment. Thus we load below the data that was saved **before**
 performing the alignment and proceed the analysis with that data.
 
-```{r eval=file.exists("refine_identified_lcms1.RData")}
-load("refine_identified_lcms1.RData")
+```{r eval=file.exists("objects/refine_identified_lcms1.RData")}
+load("objects/refine_identified_lcms1.RData")
 ```
 
 Generally, the goal of the correspondence analysis is to identify
@@ -751,8 +726,8 @@ PlotChromPeakDensity() form xcms package, it is possible to simulate a
 corresopndece analyis with the default values for Peak Groups on the EIC of
 known compounds.
 
-```{r correspondence_1, eval=!file.exists("corres_lcms1.RData")}
-pd_new <- read_xlsx("metadata_lcms_rpos_rammp.xlsx", sheet = "samples") |>
+```{r correspondence_1, eval=!file.exists("objects/corres_lcms1.RData")}
+pd_new <- read_xlsx("data/lpos_rammp/metadata_lcms_rpos_rammp.xlsx", sheet = "samples") |>
   as.data.frame()
 pd_new <- DataFrame(pd_new)
 sampleData(lcms1) <- pd_new
@@ -773,7 +748,7 @@ param <- PeakDensityParam(sampleGroups = f, ## this groups per devices
 
 #' Apply to whole data
 lcms1 <- groupChromPeaks(lcms1, param = param)
-save(lcms1, file = "corres_lcms1.RData")
+save(lcms1, file = "objects/corres_lcms1.RData")
 nrow(featureDefinitions(lcms1))
 ```
 
@@ -789,8 +764,8 @@ The total number of features detected is 1427. PPM (changed to 35 as tested).
 featureDefinitions(lcms1) |> head()
 ```
 
-```{r eval=file.exists("corres_lcms1.RData")}
-load("corres_lcms1.RData")
+```{r eval=file.exists("objects/corres_lcms1.RData")}
+load("objects/corres_lcms1.RData")
 ```
 
 plot eics:
@@ -820,10 +795,15 @@ for (i in seq_len(nrow(intern_standard))) {
     abline(v = intern_standard$RT[i], col = "red", lty = 3)
     dev.off()
 }
+
 ```
 
+NOTE: Error: unable to find an inherited method for function ‘bw’ for signature
+‘object = "CentWaveParam"’
+
 Another interesting information to look a the the distribution of these features
-along the retention time axis.
+along the retention time axis.As a check point we can see the number of features
+distributed per cuts of retention time.
 
 ```{r correspondence_3}
 #| tbl-cap: "Table 3. Distribution of features along the retention time axis."
@@ -854,17 +834,17 @@ function:
 #    head()
 ```
 
-We can note that some features (e.g. F0002) have missing values in some samples.
-This is expected to a certain degree as not in all samples features,
-respectively their ions, need to be present. We will address this in the next
-section.
-
--   this quick check kinda make sense because we saw that there was less peaks
-    in the later QCs.
+We can note that some features (e.g. F0001, F0002, F0003) have missing values in
+some samples.This is expected to a certain degree as not in all samples
+features, respectively their ions, need to be present. We will address this in
+the next section.
 
 ```{r feature_abundance_2}
 nrow(featureDefinitions(lcms1))
 ```
+
+The number of features detected in all dataset was 4256. This might be due to
+high ppm value and low snthreshold.
 
 ## Gap filling
 
@@ -881,9 +861,9 @@ sum(is.na(featureValues(lcms1))) /
     length(featureValues(lcms1)) * 100
 ```
 
-Gap filling: 43%.
+Gap filling: 41%.
 
-43% of ions detected in different samples are missing. this could be due to some
+41% of ions detected in different samples are missing. this could be due to some
 missing data point in the middle of the peak. Instead of imputing of all them,
 the gap filling to recues their original intensity value from the raw data. for
 that, fillChromPeaks() function (xcms) was used to define an m/z-rt are for each
@@ -891,14 +871,14 @@ feature based on detected peaks, where the signal for the respective ion is
 expected. Then it integrates the intensities in that area and report it as
 feature abundance.
 
-```{r gapfilling2, , eval=!file.exists("gapfilling_lcms1.RData")}
+```{r gapfilling2, , eval=!file.exists("objects/gapfilling_lcms1.RData")}
 #' Fill in the missing values in the whole dataset
 lcms1 <- fillChromPeaks(lcms1, param = ChromPeakAreaParam(), chunkSize = 4)
-save(lcms1, file = "gapfilling_lcms1.RData")
+save(lcms1, file = "objects/gapfilling_lcms1.RData")
 ```
 
-```{r eval=file.exists("gapfilling_lcms1.RData")}
-load("gapfilling_lcms1.RData")
+```{r eval=file.exists("objects/gapfilling_lcms1.RData")}
+load("objects/gapfilling_lcms1.RData")
 ```
 
 ```{r gapfilling3}
@@ -907,7 +887,7 @@ sum(is.na(featureValues(lcms1))) /
     length(featureValues(lcms1)) * 100
 ```
 
-The gap-filling rescue up to 6.2% Missing Value.
+The gap-filling rescue up to 6.6% Missing Value.
 
 ```{r}
 lcms1_noblanks <- lcms1[sampleData(lcms1)$device!="BLANK", keepFeatures = TRUE]
@@ -971,7 +951,7 @@ the same sample composition and gap-filled signal should thus be more similar to
 detected signal.
 
 ```{r Detected-vs-filled-signal1-qc}
-#Distribution of data 
+# Distribution of data 
 #| fig-cap: "Figure 11. Detect vs filled signal (QCs)."
 qc <- lcms1[sampleData(lcms1)$device == "QC", keepFeatures = TRUE]
 
@@ -1012,18 +992,16 @@ summary(l)
 
 Call: lm(formula = log2(avg_filled) \~ log2(avg_detect))
 
-Residuals: Min 1Q Median 3Q Max -4.0534 -0.4925 -0.0300 0.4779 3.9436
+Residuals: Min 1Q Median 3Q Max -3.8925 -0.4368 -0.0260 0.3953 4.3704
 
 Coefficients: Estimate Std. Error t value Pr(\>\|t\|)\
-(Intercept) 0.486679 0.088185 5.519 3.75e-08 ***log2(avg_detect) 0.954437
-0.008353 114.264 \< 2e-16*** --- Signif. codes: 0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05
+(Intercept) 0.414685 0.098625 4.205 2.75e-05 ***log2(avg_detect) 0.941683
+0.009162 102.777 \< 2e-16*** --- Signif. codes: 0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05
 ‘.’ 0.1 ‘ ’ 1
 
-Residual standard error: 0.7703 on 2564 degrees of freedom (434 observations
-deleted due to missingness) Multiple R-squared: 0.8359, Adjusted R-squared:
-0.8358 F-statistic: 1.306e+04 on 1 and 2564 DF, p-value: \< 2.2e-16
-
-R quared smaller than 0.9 (0.83). Intercept low (0.48) and slope 0.95.
+Residual standard error: 0.7023 on 1700 degrees of freedom (301 observations
+deleted due to missingness) Multiple R-squared: 0.8614, Adjusted R-squared:
+0.8613 F-statistic: 1.056e+04 on 1 and 1700 DF, p-value: \< 2.2e-16
 
 ## Filtering Features: Blank flagging
 
@@ -1044,29 +1022,14 @@ lcms1 <- filterFeatures(lcms1, filter)
 featureDefinitions(lcms1)$possible_contaminants |> sum(na.rm = TRUE)
 ```
 
-Blankflag result filter: 3270 total features remain. 972 features were flagged.
+Blankflag result filter: 2687 total features remain. 338 features were flagged.
 
 ### Ion Map
 
 We will represent the m/z vs the retention time coloring the compounds that have
 been flagged in the blank and that are present in possible_contaminant column.
 
-```{r ion-map, eval=FALSE}
-ion_map <- ggplot(featureDefinitions(lcms1), aes(x = rtmed, y = mzmed, color = possible_contaminants)) +
-    geom_point() +
-    scale_color_manual(values = c("FALSE" = "black", "TRUE" = "red", "NA" = "grey")) +
-    labs(x = "retention Time (rtmed)", y = "m/z (mzmed)", color = "Possible Contaminants") +
-    theme_minimal(base_size = 10) +
-    theme(panel.border = element_rect(color = "black", fill = NA, size = 0.8))
-grid.arrange(ion_map, ncol = 1, heights = unit(4, "in"),widths = unit(7.5, "in"))
-
-#featureDefinitions(lcms1)$possible_contaminants 
-```
-
-Representation with base R.
-
 ```{r}
-
 fa <- featureArea(lcms1)
 xl <- range(fa[, c("rtmin", "rtmax")])
 
@@ -1121,8 +1084,8 @@ assayNames(res)
 #' d <- file.path(tempdir(), "objects/lcms1")
 # saveMsObject(lcms1, AlabasterParam(path = d))
 #' for now let's do R object because the previous method is not implemented yet.
-save(lcms1, file = "preprocessed_lcms1.RData")
-save(res, file = "res.RData")
+save(lcms1, file = "objects/preprocessed_lcms1.RData")
+save(res, file = "objects/res.RData")
 ```
 
 ### Noise Comparison
@@ -1164,3 +1127,8 @@ axis(1, at = seq_along(group), labels = names(group))
 
 In this case, blood and plasma show more background noise than capitainer. Pool
 sample form plasma has less reproducbility as well.
+
+```{r}
+
+sessionInfo()
+```
