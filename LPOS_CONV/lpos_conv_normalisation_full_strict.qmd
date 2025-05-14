@@ -59,8 +59,8 @@ library(MetaboAnnotation) # Functionality for metabolite annotation.
 
 ```{r import, message=FALSE}
 # Data import
-load("preprocessed_lcms1.RData")
-load("res.RData")
+load("objects/preprocessed_lcms1.RData")
+load("objects/res.RData")
 featureDefinitions(lcms1) |>head()
 ```
 
@@ -170,7 +170,7 @@ leg_full["QC"] <- "#f00e0e"
 col_sample <- leg_full[res$device]
 ```
 
-For better representation, data is log2 transformed, centered and scaled in 
+For better representation, data is log2 transformed, centered and scaled in
 order to stabilize the variance and remove dependence on absolute abundances,
 respectively.
 
@@ -260,14 +260,14 @@ legend("topright", col = leg_full,
 ```
 
 The representation above of total intensities and log2 feature abundance per
-sample show a decrease of number of features detected alog the retention time
+sample show a decrease of number of features detected along the retention time
 due to instrumental sensibility decreased.The standard deviation is higher and
 the number of features decreased in the end of the analysis. This change is
-shown in all samples and is particularly obvious in QC samples. As samples were
-randomized, the injection order correction will only affect the instrumental
-variability and not biological variability. The comparison between raw data and
-raw filled data showed that gap filling step rescue those features that have not
-being detected in samples along the analysis.
+shown in all samples and is particularly obvious in QC samples (red). As samples
+were randomized, the injection order correction will only affect the
+instrumental variability and not biological variability. The comparison between
+raw data and raw filled data showed that gap filling step rescue those features
+that have not being detected in samples along the analysis.
 
 ### CV values
 
@@ -446,49 +446,13 @@ quantitative analysis to determine if there are significant differences.
 ### Intensity Evaluation (RLA)
 
 Relative log abundance plots (RLA) are useful to compare differences in
-abundance between samples.
-
-```{r RLA-after-norm2, fig.height=7, fig.width=7}
-#| fig-cap: "Figure 6. RLA before and after normalisation across analysis."
-
-layout(mat = matrix(1:2, ncol = 1), height = c(0.9,0.9))
-par(mfrow = c(2, 1), mar = c(2, 4.5, 2.5, 1))
-
-# A) RLA Raw data
-boxplot(rowRla(assay(res, "raw_filled"), group = res$device),
-        cex = 0.5, pch = 16,  border = leg_full, 
-        ylab = "RLA", xlab = "injection order", 
-        col = paste0(leg_full, 80), cex.main = 1, outline = FALSE,
-        xaxt = "n", main = "Non-normalised data", boxwex = 1)
-grid()
-abline(h = 0, lty = 3, lwd = 1, col = "black")
-legend("topright", col = leg_full,
-       legend = names(leg_full), lty=1, lwd = 2, xpd = TRUE, ncol = 3,
-       cex = 0.6,  bty = "n")
-
-# B) RLA Normalised data
-boxplot(rowRla(assay(res, "norm"), group = res$device),
-        cex = 0.5, pch = 16,  border = leg_full, 
-        ylab = "RLA", xlab = "injection order", 
-        col = paste0(leg_full, 80), boxwex = 1, outline = FALSE,
-        xaxt = "n", main = "Normalised data", cex.main = 1)
-axis(side = 1, at = seq_len(ncol(res)), 
-     labels = colData(res)$sample_name)
-grid(nx = NA, ny = NULL)
-abline(h = 0, lty = 3, lwd = 1, col = "black")
-legend("topright", col = leg_full,
-       legend = names(leg_full), lty=1, lwd = 2, xpd = TRUE, ncol = 3,
-       cex = 0.6,  bty = "n")
-
-```
+abundance between samples. RLA plot is performed only focusing on QC samples for
+better visualisation of injection order based in unique sample.
 
 After normalization, relative log abundance plot shows that all QCs abundance
 have been centered around the median. This make the medians of each sample close
 to zero. Also, all boxes are centered around 0 suggesting all samples being
 comparable.
-
-RLA plot is performed again only focussing on QC samples for better
-visualisation.
 
 ```{r RLA-after-norm1, fig.height=7, fig.width=7}
 #| fig-cap: "Figure 7. RLA of QCs before and after normalisation."
@@ -523,7 +487,7 @@ legend("topright", col = colors,
 ```
 
 By only plotting the QCs we can visualise the effect of normalisation based on
-QC samples are centered around 0. 
+QC samples are centered around 0.
 
 ### CV after normalisation
 
@@ -559,7 +523,6 @@ The coefficient of variation is clearly reduced by the normalization for the QC
 samples suggesting that indeed technical variance was removed. For study
 samples, CV is comparable suggesting that normalization indeed just reduced the
 technical, but not the biological variance in the data set.
-
 
 #### Density Plots with the distribution of CV in the whole dataset.
 
@@ -626,7 +589,6 @@ axis(1, at = seq(0, 1.5, by = 0.1), labels = seq(0, 1.5, by = 0.1))
 
 # Add a legend to the plot for the subset
 legend("topright", legend = names(dens_subset), fill = transparent_cols_subset)
-
 ```
 
 This density plot shows the distribution of CV values for QC samples before
@@ -664,13 +626,15 @@ nrow(res)/nrow(res_orig) * 100
 The original data set consisted of `r nrow(res_orig)` features. Removal of
 possible contaminants reduced the data set to `r nrow(res)` features.
 
-Number of possible_contaminants removed: 338 Number features remaining 2564
-Percentage remain features : 88%
+From a total of 2902 features, by filtering blankFlag features, 198 features are
+removed remaining 2564, the 88.3% of total features.
 
 ## Filter RSD filter:
 
-RSD, defined as the st. dev of QC samples divided by st deviation for biological
-samples, for each feature.
+RSD is defined as the st. dev of QC samples divided by st deviation for
+biological samples, for each feature.The purpose of this filtering is to remove
+features with high technical variability, which is with a CV\>30% present in QC
+samples.
 
 ```{r unfiltered-object}
 # Keep unfiltered object
@@ -686,10 +650,9 @@ res <- filterFeatures(res, filter = filter_Rsd, assay = "norm_imputed")
 
 ```
 
-After RSD (CV) filtering, the data set contains `r nrow(res)` features.
-
-NOTE: check filtering. before 198 features were removed. Why now 200 features
-are removed?
+After RSD (CV) filtering, 198 features are removed and the data set contains
+`r nrow(res)` features.This correstpond to 81.5% of features originally
+detected.
 
 ```{r features-number}
 #' Number of features after analysis
@@ -701,7 +664,7 @@ nrow(res)/nrow(res_orig) * 100
 As we need to assess number of features in blank we need to do all process of
 normalisation and filtering with res_blank object.
 
-```{r features-number-2}
+```{r filtering-blanks}
 # Keep an original object
 res_blank_orig <- res_blank
 nrow(res_blank_orig)
@@ -709,7 +672,6 @@ nrow(res_blank_orig)
 rowData(res_blank)$possible_contaminants[is.na(rowData(res_blank)$possible_contaminants)] <- FALSE
 # subsetting res removing possible contaminants from blank. 
 
-## FROM NOW ON NROWs is different. 
 res_blank <- res_blank[!rowData(res_blank)$possible_contaminants,]
 nrow(res_blank)
 #Percentage of features removed
@@ -799,6 +761,7 @@ therefor will have been detected).
 Same data is ploted with raw assay to avoid filling process.
 
 ```{r test-function-int}
+#' create a funciton to transform everything to integer. 
 #x <- res[, 1]
 small_fct <-function (x){
     as.integer(!is.na(x))
@@ -851,15 +814,16 @@ Why do we use unfilled data for qualitative analysis?
 
 During the gap filling, the algorithm is rescuing intensities of NA features in
 some samples from the unfilled data. The reason why we can rescue that data is
-because those features are already present in at least one sample.\
-However, if we want to do an experiment only with one type of device or
-reference samples, the algorithm won't know those missing features. So, it is
-important to keep raw data to measure the number of features. However, for
-quantitative analysis, as intensity will be taken into account and imputation
-will need to be done, it would be better to do gap filling beforehand.
+because those features are already present in at least one sample. However, if
+we want to do an experiment only with one type of device or reference samples,
+the algorithm won't know those missing features. So, it is important to keep raw
+data to measure the number of features. However, for quantitative analysis, as
+intensity will be taken into account and imputation will need to be done, it
+would be better to do gap filling beforehand.
 
 ```{r upset-plot}
 # Indexing per device to sum per rows
+# note: why w ind is different? 
 idx_W <- res$device == "WHATMAN"
 idx_C <- colData(res)$device == "CAPITAINER"
 idx_M <- colData(res)$device == "MITRA"
@@ -874,7 +838,7 @@ fts_B <- apply(assay(res[,idx_B], "raw"), 2, small_fct)
 fts_P <- apply(assay(res[,idx_P], "raw"), 2, small_fct)
 ncol(res)
 # Create a binary matrix with condition: <5 = 0
-binary_all <- cbind(
+logical_all <- cbind(
     ifelse(rowSums(fts_W) < 5, 0, 1),
     ifelse(rowSums(fts_C) < 5, 0, 1),
     ifelse(rowSums(fts_M) < 5, 0, 1),
@@ -882,16 +846,12 @@ binary_all <- cbind(
     ifelse(rowSums(fts_P) < 5, 0, 1)
     )
 
-colnames(binary_all) <- c("WHATMAN", "CAPITAINER", "MITRA", "BLOOD", "PLASMA")
+colnames(logical_all) <- c("WHATMAN", "CAPITAINER", "MITRA", "BLOOD", "PLASMA")
 
 
 # #Bar Plot to identify NA per device
-# barplot(colSums(binary_all), col = leg_full, ylab = "Number of features", 
-#         space = 0.25, ylim = c(0, 2500), main = "Number of features per sample group", 
-#         xlab = colSums(binary_all))
-
 # save positions of each bar
-bar_positions <- barplot(colSums(binary_all), 
+bar_positions <- barplot(colSums(logical_all), 
                          col = leg_full, 
                          ylab = "Number of features", 
                          space = 0.25, 
@@ -900,20 +860,18 @@ bar_positions <- barplot(colSums(binary_all),
 
 # Add number of features on top of each bar
 text(x = bar_positions,
-     y = colSums(binary_all) + 100,  # +100 to center text
-     labels = colSums(binary_all),
+     y = colSums(logical_all) + 100,  # +100 to center text
+     labels = colSums(logical_all),
      cex = 0.9, font = 2)
-
 
 ```
 
-Once error solved, replace binary_all by logical_all and delete logical all from
-below. As we were expecting plasma has less number of features than the rest and
-all devices have a similar number of features, being Whatman the device with
-higher number of features:
+As we were expecting plasma has less number of features than the rest and all
+devices have a similar number of features, being Whatman the device with higher
+number of features:
 
-```{r}
-colSums(binary_all)
+```{r col_sums}
+colSums(logical_all)
 ```
 
 ### Upset Plot samples
@@ -927,7 +885,7 @@ all sets of intersections:
 
 ```{r up-set-all}
 #' Upset plot from device specific blanks
-upset(as.data.frame(binary_all), sets.bar.color = c("#B3DE69", "#BC80BD", "#80B1D3","#FB8072",   "#FDB462"))
+upset(as.data.frame(logical_all), sets.bar.color = c("#B3DE69", "#BC80BD", "#80B1D3","#FB8072",   "#FDB462"))
 ```
 
 Set size: plasma has the smallest set size, while Whatman has the largest. Mitra
@@ -961,7 +919,7 @@ percent_missing <- cbind(
 # Plot
 layout(mat = matrix(1:3, ncol = 1), height = c(0.3, 0.3, 0.8))
 par(mar = c(1, 4.5, 1, 3))
-barplot(colSums(binary_all), col = leg_full, ylab = "Number of features", 
+barplot(colSums(logical_all), col = leg_full, ylab = "Number of features", 
         space = 0.05)
 barplot(c(percent_missing), ylab = "% of missing values", 
         col = leg_full, space = 0.05, ylim = c(0, 60))
@@ -969,13 +927,16 @@ vioplot(intensity, ylab = "Log2 intensity", col = leg_full,
         space = 0.10, ylim = c(4, 25))
 ```
 
-If I used the unfilled and filtered dataset I see the distribution of low
-intensity features is cut. (question: Should I keep the original assay
-(assay(res)\$raw) without gapfilling? median scaling? noise threshold?)
+As seen before, the number of missing values is higher in plasma as it is the
+groups with less features detected and microsampling has similar number of
+missing values. If we look at the distribution, the number of features affect to
+each group being whatman, capitainer and mitra similar in terms of intensity.
+However, blood and plasma are less reproducible, mroe variable and present more
+features with extreme intensities.
 
 ## Distribution across rt
 
-```{r}
+```{r distribution_rt}
 #' Bin features per RT slices
 vc <- rowData(res)$rtmed
 breaks <- seq(60, max(vc, na.rm = TRUE) + 1, length.out = 15) |> 
@@ -983,7 +944,7 @@ breaks <- seq(60, max(vc, na.rm = TRUE) + 1, length.out = 15) |>
 cuts <- cut(vc, breaks = breaks, include.lowest = TRUE)
 table(cuts)
 
-num_ft <- apply(binary_all, MARGIN = 2, 
+num_ft <- apply(logical_all, MARGIN = 2, 
                 function(x) unlist(lapply(split(x, cuts), sum)))
 
 #' Create the dataframe with TRUE/FALSE values per sample group. 
@@ -1027,7 +988,7 @@ int <- list(
     )
 ```
 
-```{r}
+```{r distribution-rtandintensity}
 # Plot
 layout(mat = matrix(1:2, ncol = 1), heights = c(0.5, 0.5))
 par(mar = c(0.5, 4.5, 2, 3))
@@ -1067,7 +1028,7 @@ and blood present less intensity than the devices.
 
 ## Distribution across m/z
 
-```{r}
+```{r distribution-mz}
 #' Bin features per m/z slices
 vc <- rowData(res)$mzmed
 breaks <- seq(60, max(vc, na.rm = TRUE) + 1, length.out = 15) |> 
@@ -1075,7 +1036,7 @@ breaks <- seq(60, max(vc, na.rm = TRUE) + 1, length.out = 15) |>
 cuts <- cut(vc, breaks = breaks, include.lowest = TRUE)
 table(cuts)
 
-num_ft <- apply(binary_all, MARGIN = 2, 
+num_ft <- apply(logical_all, MARGIN = 2, 
                 function(x) unlist(lapply(split(x, cuts), sum)))
 
 #' Create the dataframe with TRUE/FALSE values per sample group. 
@@ -1150,19 +1111,23 @@ axis(side = 1, at = seq_len(nrow(num_ft)), labels = rownames(num_ft))
 grid()
 ```
 
+If number of features are spread across the m/z bins there is high abundance of
+lipids and less small molecules. However, between 300 and 450, and 550 and 690
+m/z there are more differences between microsampling devidces and references
+sample groups (blood and plasma).
 
 # DIFFERENCIAL ABUNDANCE ANALYSIS (lm)
 
-The next step is to identify features that are differential abundant between the
-devices and reference samples. This allows to identify potential metabolites
-that are extracted with significant differences within different devices. In
-this case, a multiple linear regression analysis is used to identify the
-features with significantly difference in abundances between Whatman, Mitra,
+HERE The next step is to identify features that are differential abundant
+between the devices and reference samples. This allows to identify potential
+metabolites that are extracted with significant differences within different
+devices. In this case, a multiple linear regression analysis is used to identify
+the features with significantly difference in abundances between Whatman, Mitra,
 capitainer, Blood or plasma. First, it is important to evaluate the similarities
 between study samples using PCA, after excluding QC samples to avoid them to
 bring variance.
 
-We want to see variantion within the devices so first we will see how they
+We want to see variation within the devices so first we will see how they
 cluster.
 
 ```{r PCA-only-samples-before-lm}
@@ -1434,11 +1399,10 @@ abundances in Mitra, while in the other two microsampling devices the abundances
 are higher. A similar observation can be made in the comparison between Whatman
 and Capitainer.
 
-
 ### Table of significant features
 
 ```{r significant-features-plasma}
-# Table of significant features in all groups
+# Table of significant features in WHATMAN
 tab <- rowData(res)[rowData(res)$significant.W,
                     c("mzmed", "rtmed", 
                       "coef.W","pvalue.W","adjp.W", "avg.W",
@@ -1490,7 +1454,6 @@ in the EIC object.
 
 #' Restrict the raw data to study samples.
 lcms1_study <- lcms1[!idx_blank_qc, keepFeatures = TRUE]
-# save("lcms1_study.RData")
 
 #' Extract EICs for the significant features
 eic_sign_test <- featureChromatograms(
@@ -1502,8 +1465,6 @@ plot(eic_sign_test, col = col_sample,
      peakBg = paste0(col_sample[chromPeaks(eic_sign_test)[, "sample"]], 60))
 legend("topright", col = col_sample, legend = names(col_sample), lty = 1)
 dev.off()  # Closes any active plotting devices
-
-# save("lcms1_study.RData")
 ```
 
 NOTE: fix. Error in plot.new() : figure margins too large. Is it related with
@@ -1515,13 +1476,12 @@ I save it as res_sign_fts.
 ```{r res-save}
 # Save res object
 res_sts <- res
-save(res_sts, file = "res_sts.RData")
+save(res_sts, file = "objects/res_sts.RData")
 ```
 
 #### Comparison with linear model with participants
 
 ##### Linear Model with participants
-
 
 The same way we compared in a linear model all the devices and references
 samples taking into account the sex variable, now we include participants as a
@@ -1699,7 +1659,7 @@ grid()
 abline(0, 1)
 ```
 
-## Blood vs devices
+NOTE:comment \## Blood vs devices
 
 since microsampling devices contains whole blood samples, it is useful to
 include whole blood as a reference group when comparing microsampling devices.
@@ -1879,7 +1839,7 @@ abundance between the compared groups, their adjusted p-value, their average
 (log2) abundance in each sample group and their RSD in QC samples in the table
 bellow.
 
-### Table of signigicant features
+### Table of significant features
 
 ```{r}
 # Table of significant features in all groups
@@ -2466,5 +2426,4 @@ kable(tab, format = "pipe")
 
 We can confirm that devices are no able to bring significant differences between
 men and women. Only one feature in plasma was significantly different between
-women and men with a adjusted pvalue > 0.05.
-
+women and men with a adjusted pvalue \> 0.05.
